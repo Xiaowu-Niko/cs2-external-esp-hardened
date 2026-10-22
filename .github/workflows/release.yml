@@ -62,6 +62,38 @@ jobs:
           ls src/external/AsyncLogger/include/AsyncLogger/Logger.hpp
           ls src/external/curl/include/curl/curl.h
 
+      # AsyncLogger captures std::source_location::current() as a default
+      # argument, so every LOGF call site bakes its source path and full
+      # function signature into .rdata. In the first shipped build that gave
+      # away the build-agent path (D:\a\<repo>\...) and every function name.
+      #
+      # The externals are gitignored (cloned fresh each run), so the fix is
+      # applied here rather than committed. Release builds get an empty
+      # location; Debug keeps full locations.
+      - name: Strip source_location from release build
+        shell: bash
+        run: |
+          set -e
+          python - <<'PY'
+          import pathlib, re
+          p = pathlib.Path("src/external/AsyncLogger/src/LogIntermediate.hpp")
+          s = p.read_text(encoding="utf-8")
+          before = s.count("std::source_location::current()")
+          s = s.replace("std::source_location::current()",
+                        "std::source_location{ 0, 0, nullptr, nullptr }")
+          p.write_text(s, encoding="utf-8")
+          print(f"patched {before} default-argument sites in {p}")
+
+          # LOG() has the same default-argument capture.
+          q = pathlib.Path("src/external/AsyncLogger/include/AsyncLogger/Logger.hpp")
+          t = q.read_text(encoding="utf-8")
+          n = t.count("std::source_location::current()")
+          t = t.replace("std::source_location::current()",
+                        "std::source_location{ 0, 0, nullptr, nullptr }")
+          q.write_text(t, encoding="utf-8")
+          print(f"patched {n} default-argument sites in {q}")
+          PY
+
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v1
 

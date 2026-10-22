@@ -69,9 +69,13 @@ std::string LogHelper::FormatConsole(const LogMessagePtr msg) {
 		const auto level     = msg->Level();
 		const auto color     = GetColor(level);
 
-		const auto file = std::filesystem::path(location.file_name()).filename().string();
-
 #ifdef _DEBUG
+		// file_name() is only needed in Debug builds. Computing it unconditionally
+		// (as the original did) forced the compiler to keep every source path and
+		// function signature string in .rdata for the whole program — the release
+		// binary was shipping "D:\a\<repo>\src\core\engine\Engine.cpp" and
+		// "bool __cdecl Engine::InitImpl(void)" next to each log literal.
+		const auto file = std::filesystem::path(location.file_name()).filename().string();
 		out << ADD_COLOR_TO_STREAM(LogColor::GRAY) << "[" << timestamp << "]" << ADD_COLOR_TO_STREAM(color) << "[" << GetLevelStr(level) << "/" << file << ":"
 		    << location.line() << "] " << RESET_STREAM_COLOR << msg->Message();
 #else
