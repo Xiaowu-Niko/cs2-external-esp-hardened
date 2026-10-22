@@ -241,13 +241,16 @@ struct Api {
 };
 
 inline Api<NtReadVirtualMemory_t>& nt_read() {
-    // FNV-1a("NtReadVirtualMemory") folded at compile time — no literal emitted.
+    // Hash folded at compile time — no literal emitted. Declared constexpr so
+    // MSVC does not keep the argument string alive in .rdata.
+    constexpr uint32_t kHash = fnv1a("NtReadVirtualMemory");
     static Api<NtReadVirtualMemory_t> a = [] {
         Api<NtReadVirtualMemory_t> r{};
         auto s = make_stub_hashed(fnv1a("NtReadVirtualMemory"));
         if (s.ok) { r.fn = reinterpret_cast<NtReadVirtualMemory_t>(s.code); r.ok = true; }
         return r;
     }();
+    (void)kHash;
     return a;
 }
 

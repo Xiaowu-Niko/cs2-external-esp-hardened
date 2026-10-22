@@ -165,10 +165,17 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>common.hpp</PrecompiledHeaderFile>
       <ForcedIncludeFiles>common.hpp</ForcedIncludeFiles>
+      <!-- No /Zi in Release: the linker was embedding the full symbol table and
+           the build-agent source path (D:\a\<repo>\...) into the exe, which
+           handed a signature scanner the function names, the type names
+           (pNtReadVirtualMemory) and the exact upstream repo it was built from. -->
+      <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Off: /DEBUG embeds a CodeView record pointing at the PDB. Without a
+           PDB shipped that record is dead weight, and it is a stable fingerprint. -->
+      <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>
       </AdditionalLibraryDirectories>

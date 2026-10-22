@@ -173,10 +173,14 @@ inline bool Reader::read(uintptr_t addr, void* buf, size_t size) {
     }
 
     // Fallbacks, in increasing observability. Resolved by hash, never by name.
+    // The hash is a constexpr local so MSVC folds it even without /O2 constant
+    // propagation across the lambda boundary — passing fnv1a("...") directly
+    // left the literal in .rdata in the first CI build.
     static sc::NtReadVirtualMemory_t nt_fallback = []() -> sc::NtReadVirtualMemory_t {
+        constexpr uint32_t kHash = sc::fnv1a("NtReadVirtualMemory");
         uintptr_t base = sc::detail::ntdll_base();
         if (!base) return nullptr;
-        uintptr_t p = sc::detail::export_by_hash(base, sc::fnv1a("NtReadVirtualMemory"));
+        uintptr_t p = sc::detail::export_by_hash(base, kHash);
         return reinterpret_cast<sc::NtReadVirtualMemory_t>(p);
     }();
 
