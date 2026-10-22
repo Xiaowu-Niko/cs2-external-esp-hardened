@@ -36,4 +36,4 @@ jobs:
           Fixed typos
            - This pull request fixes typos detected by the typo-check GitHub action.
         labels: typo
-        assignees: IMXNOOBX
+        assignees: Xiaowu-Niko

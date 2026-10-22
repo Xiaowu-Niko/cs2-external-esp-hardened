@@ -237,6 +237,11 @@
     <ClInclude Include="core\engine\classes\Player.hpp" />
     <ClInclude Include="core\logger\LogHelper.hpp" />
     <ClInclude Include="core\memory\Memory.hpp" />
+        <ClInclude Include="hardened\obf.hpp" />
+        <ClInclude Include="hardened\syscall.hpp" />
+        <ClInclude Include="hardened\secret.hpp" />
+        <ClInclude Include="hardened\overlay.hpp" />
+        <ClInclude Include="hardened\hardened.hpp" />
     <ClInclude Include="core\offsets\Dumper.hpp" />
     <ClInclude Include="core\offsets\Offsets.hpp" />
     <ClInclude Include="external\AsyncLogger\include\AsyncLogger\Logger.hpp" />

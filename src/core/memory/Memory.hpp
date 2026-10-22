@@ -7,17 +7,33 @@
 #include <TlHelp32.h>
 #include <string>
 #include <iostream>
-#include <Psapi.h> 
+#include <Psapi.h>
 
+#include "hardened/syscall.hpp"
+#include "hardened/secret.hpp"
+
+// The original kept a hand-rolled ntdll resolver here:
+//     pMemory() {
+//         GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtReadVirtualMemory");
+//         GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtWriteVirtualMemory");
+//     }
+// constructed fresh on every single read (see read_raw/read below). That put the
+// string "ntdll.dll"/"NtReadVirtualMemory" in .rdata AND delivered every read to
+// the exact ntdll export a usermode hook would be planted on.
+//
+// Both functions are still exposed for ABI compatibility, but they now come from
+// the syscall trampoline in hardened/syscall.hpp: resolved once, by export hash,
+// executed from our own RX page rather than from ntdll.
 typedef NTSTATUS(WINAPI* pNtReadVirtualMemory)(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer, ULONG NumberOfBytesToRead, PULONG NumberOfBytesRead);
 typedef NTSTATUS(WINAPI* pNtWriteVirtualMemory)(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer, ULONG NumberOfBytesToWrite, PULONG NumberOfBytesWritten);
 
 class pMemory {
-
 public:
 	pMemory() {
-		pfnNtReadVirtualMemory = (pNtReadVirtualMemory)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtReadVirtualMemory");
-		pfnNtWriteVirtualMemory = (pNtWriteVirtualMemory)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtWriteVirtualMemory");
+		auto& r = sc::nt_read();
+		auto& w = sc::nt_write();
+		pfnNtReadVirtualMemory  = reinterpret_cast<pNtReadVirtualMemory>(r.ok ? r.fn : nullptr);
+		pfnNtWriteVirtualMemory = reinterpret_cast<pNtWriteVirtualMemory>(w.ok ? w.fn : nullptr);
 	}
 
 	pNtReadVirtualMemory pfnNtReadVirtualMemory;
@@ -61,37 +77,73 @@ public:
 		return pattern_address + offset_value + offset + sizeof(T);
 	}
 
+	// Reads go through the trampoline first; the ntdll export is only a
+	// fallback when the trampoline could not be built. The old code called the
+	// ntdll export unconditionally.
 	bool read_raw(uintptr_t address, void* buffer, size_t size)
 	{
-		SIZE_T bytesRead;
+		SIZE_T bytesRead = 0;
+
+		if (auto& r = sc::nt_read(); r.ok)
+		{
+			LONG status = r.fn(this->handle_, (PVOID)(address), buffer, static_cast<SIZE_T>(size), &bytesRead);
+			return status == 0 && bytesRead == size;
+		}
+
 		pMemory cMemory;
+		if (!cMemory.pfnNtReadVirtualMemory)
+			return false;
 
 		NTSTATUS status = cMemory.pfnNtReadVirtualMemory(this->handle_, (PVOID)(address), buffer, static_cast<ULONG>(size), (PULONG)&bytesRead);
-	
+
 		return status == 0x00000000/*STATUS_SUCCESS*/ || bytesRead == size;
 	}
 
 	template<class T>
 	void write(uintptr_t address, T value)
 	{
+		// NOTE: no call sites in this project — the ESP never writes to the game.
+		// Kept for API compatibility; requires a handle opened with VM_OPERATION,
+		// which AttachProcess no longer requests.
+		if (auto& w = sc::nt_write(); w.ok)
+		{
+			w.fn(handle_, (PVOID)address, &value, sizeof(T), nullptr);
+			return;
+		}
 		pMemory cMemory;
-		cMemory.pfnNtWriteVirtualMemory(handle_, (void*)address, &value, sizeof(T), 0);
+		if (cMemory.pfnNtWriteVirtualMemory)
+			cMemory.pfnNtWriteVirtualMemory(handle_, (void*)address, &value, sizeof(T), 0);
 	}
 
 	template<class T>
 	T read(uintptr_t address)
 	{
 		T buffer{};
-		pMemory cMemory;
 
-		cMemory.pfnNtReadVirtualMemory(handle_, (void*)address, &buffer, sizeof(T), 0);
+		if (auto& r = sc::nt_read(); r.ok)
+		{
+			SIZE_T got = 0;
+			r.fn(handle_, (PVOID)address, &buffer, sizeof(T), &got);
+			return buffer;
+		}
+
+		pMemory cMemory;
+		if (cMemory.pfnNtReadVirtualMemory)
+			cMemory.pfnNtReadVirtualMemory(handle_, (void*)address, &buffer, sizeof(T), 0);
+
 		return buffer;
 	}
 
 	void write_bytes(uintptr_t addr, std::vector<uint8_t> patch)
 	{
+		if (auto& w = sc::nt_write(); w.ok)
+		{
+			w.fn(handle_, (PVOID)addr, &patch[0], patch.size(), nullptr);
+			return;
+		}
 		pMemory cMemory;
-		cMemory.pfnNtWriteVirtualMemory(handle_, (void*)addr, &patch[0], patch.size(), 0);
+		if (cMemory.pfnNtWriteVirtualMemory)
+			cMemory.pfnNtWriteVirtualMemory(handle_, (void*)addr, &patch[0], patch.size(), 0);
 	}
 
 	uintptr_t read_multi_address(uintptr_t ptr, std::vector<uintptr_t> offsets)

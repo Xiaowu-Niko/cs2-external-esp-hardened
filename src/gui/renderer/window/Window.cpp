@@ -1,5 +1,7 @@
 #include "Window.hpp"
 
+#include "hardened/overlay.hpp"
+
 ID3D11Device* Window::device = nullptr;
 ID3D11DeviceContext* Window::device_context = nullptr;
 IDXGISwapChain* Window::swap_chain = nullptr;
@@ -9,6 +11,12 @@ bool Window::vsync = false;
 HWND Window::hwnd = nullptr;
 HWND Window::viewport = nullptr;
 WNDCLASSEX Window::wc = { };
+
+// Was: a hardcoded "wa" class name and "wa" title, identical on every machine
+// that built this repo. One EnumWindows pass keyed on the class name found it.
+// Now generated per-process from realistic framework names.
+wchar_t Window::class_name[128] = { };
+wchar_t Window::window_title[128] = { };
 
 extern LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -110,11 +118,16 @@ void Window::DestroyDevice()
 bool Window::SpawnWindow()
 {
 	ImGui_ImplWin32_EnableDpiAwareness();
+
+	// Per-process class/title instead of the shared "wa" literal.
+	overlay::random_class_name(class_name, _countof(class_name));
+	overlay::random_title(window_title, _countof(window_title));
+
 	wc.cbSize = sizeof(wc);
 	//wc.style = CS_CLASSDC;
 	wc.style = 0;
 	wc.hInstance = GetModuleHandle(0);
-	wc.lpszClassName = "wa";
+	wc.lpszClassName = class_name;
 	wc.lpfnWndProc = window_procedure;
 	//wc.cbClsExtra = 0;
 	//wc.cbWndExtra = 0;
@@ -133,8 +146,8 @@ bool Window::SpawnWindow()
 
 	hwnd = CreateWindowEx(
 		WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
-		"wa",
-		"wa",
+		class_name,
+		window_title,
 		WS_POPUP | WS_VISIBLE,
 		0, 0, width, height,
 		NULL,

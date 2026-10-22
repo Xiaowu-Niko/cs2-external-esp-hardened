@@ -24,6 +24,8 @@
 #include "core/engine/Engine.hpp"
 #include "gui/renderer/Renderer.hpp"
 
+#include "hardened/hardened.hpp"
+
 #include <external/exception.hpp>
 
 int main()
@@ -31,6 +33,12 @@ int main()
     c_exception_handler::setup();
 
     LogHelper::Init();
+
+    // Seeds the per-process RNG (window identity) and builds the syscall
+    // trampolines. Returns false only in the degraded case where ntdll's stubs
+    // could not be read — the read path then falls back, so this is not fatal.
+    if (!hardened::init())
+        LOGF(WARNING, "Syscall trampolines unavailable, falling back to resolved exports");
 
     LOGF(INFO, "Compiled {}, Welcome to cs2-external-esp-recode!", __TIMESTAMP__);
 

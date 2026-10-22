@@ -1,19 +1,19 @@
 ---
 name: Bug Report
-about: Report bugs using this template, for Environment/General support please use
-  discord.
+about: Report bugs using this template. For upstream (non-hardening) issues, please
+  report to IMXNOOBX/cs2-external-esp instead.
 title: "[BUG]"
 labels: bug
-assignees: IMXNOOBX
+assignees: Xiaowu-Niko
 
 ---
 
 ### **Before Submitting**
-⚠️ **Is this a bug related to the code?**
-- [ ] Yes, this is a bug in the code.
-- [ ] No, this is a general support question (please use [Discord](https://discord.gg/pRew8ZDkyp) instead).
+⚠️ **Is this a bug related to this fork's changes?**
+- [ ] Yes, this is a bug in the hardening changes (see AUDIT-隐蔽性加固.md).
+- [ ] No, this is an upstream bug that also exists in IMXNOOBX/cs2-external-esp.
 
-If you selected "No," please close this issue and post in Discord or Discussions.
+If you selected "No," please report it upstream instead.
 
 ---
 

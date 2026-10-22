@@ -67,8 +67,15 @@ HWND pProcess::GetWindowHandleFromProcessId(DWORD ProcessId) {
 		MODULEINFO module_info;
 		DWORD _;
 
-		handle_ = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
-                                PROCESS_VM_READ, FALSE, pid_);
+		// Was: PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ
+		// PROCESS_VM_OPERATION is write/change-protection capability, and every
+		// write path in this project (Allocate, FindCodeCave, write<T>,
+		// write_bytes) has zero call sites. This is a read-only ESP; asking for
+		// write rights buys nothing and is the loudest thing in the handle table.
+		//
+		// PROCESS_QUERY_LIMITED_INFORMATION also avoids requiring
+		// SeDebugPrivilege on protected targets.
+		handle_ = OpenProcess(secret::kReadRights, FALSE, pid_);
 
 		if (!handle_)
 			return false;
@@ -97,7 +104,11 @@ bool pProcess::AttachWindow(const char* WindowName)
 		MODULEINFO module_info;
 		DWORD _;
 
-		handle_ = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid_);
+		// Was: PROCESS_ALL_ACCESS — needs SeDebugPrivilege and is strictly worse
+		// than the path above. This function is not on the live path
+		// (Engine.cpp uses AttachProcess), but it still compiled in, so it is a
+		// free signpost for anyone reading the binary.
+		handle_ = OpenProcess(secret::kReadRights, FALSE, pid_);
 
 		EnumProcessModulesEx(this->handle_, modules, sizeof(modules), &_, LIST_MODULES_64BIT);
 		base_client_.base = (uintptr_t)modules[0];
