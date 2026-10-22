@@ -1,4 +1,4 @@
-﻿# cs2-external-esp 隐蔽性审计与加固
+# cs2-external-esp 隐蔽性审计与加固
 
 对象：`IMXNOOBX/cs2-external-esp` @ `58f02c1`（main，Recode 第三代）
 本地路径：`D:\Users\35017\Desktop\cs2`
@@ -267,34 +267,100 @@ class=[ApplicationFrame5]  title=[]
 
 ---
 
-## 6. 接入步骤
+## 6. 二进制层面的泄漏（发布后才发现的）
+
+字符串加密只处理了源码里的字面量，**没有处理编译器自己塞进 `.rdata` 的东西**。第一版发布产物 `strings` 出来是这样的：
+
+```
+D:\a\cs2-external-esp-hardened\cs2-external-esp-hardened\src\core\engine\Engine.cpp
+bool __cdecl Engine::InitImpl(void)
+bool __cdecl Engine::AwaitProcess(void)
+?AV<lambda_1>@?1??InitImpl@LogHelper@@AEAA_NXZ@
+```
+
+构建机路径、每个函数的完整签名、每个 lambda 的修饰类型名，全在里面。这比源码字面量泄漏更严重——它是一张现成的项目结构图。
+
+### 6.1 `std::source_location`（主因）
+
+`AsyncLogger` 的 `LogIntermediate` 构造函数用 `std::source_location::current()` 作**默认参数**。默认参数在每个 `LOGF` 调用点展开，于是每个调用点都往 `.rdata` 里留一份"文件路径 + 函数签名"。
+
+关键点：这跟是否输出位置**无关**。`LogHelper.cpp` 的 Release 分支根本不打印 `file`，但字符串照样被保留。
+
+顺带修了 `LogHelper.cpp:72`：原本无条件求值 `std::filesystem::path(location.file_name())`，用在 Debug 分支之外，白白让编译器保留路径。
+
+修法：release 工作流里打补丁，把 `std::source_location::current()` 换成 `std::source_location()`（空位置）。**不改第三方头**——`src/external/` 在 `.gitignore` 里，CI 每次重新 clone，改了会被覆盖。
+
+### 6.2 调试信息（`/Zi` + `/DEBUG`）
+
+`src.vcxproj` 的 `Release|x64` 原本配了 `GenerateDebugInformation=true` 且没设 `DebugInformationFormat`，默认 `/Zi`，链接器把 CodeView 记录嵌进了 exe。
+
+修法：`DebugInformationFormat=None` + `GenerateDebugInformation=false`。
+
+### 6.3 RTTI 类型名
+
+`<RuntimeTypeInfo>false</RuntimeTypeInfo>`（`/GR-`）。已 grep 整棵树（项目 + imgui + AsyncLogger），没有任何 `dynamic_cast` / `typeid`，无功能影响。
+
+### 6.4 无法消除的部分
+
+`/EHsc` 的 C++ 异常类型描述符（`ThrowInfo`）里仍有 `?AV<lambda_1>@...`、`std::filesystem_error`、`nlohmann::json` 等类型名。这是异常机制的固有开销，**关闭 RTTI 也去不掉**。彻底消除需要 `/EHs-c-`（禁用 try/catch），风险太高，没做。
+
+判断：这些残留是标准库和 lambda 的通用类型名，不含路径、不含业务函数签名，敏感度远低于 6.1。可接受。
+
+### 6.5 效果
+
+| 项 | v2（首发） | v6（当前） |
+|---|---|---|
+| 体积 | 1,687,552 | 1,671,680 |
+| `D:\a\cs2...` 构建路径 | 有 | 无 |
+| `Engine.cpp` | 有 | 无 |
+| `bool __cdecl Engine::InitImpl` | 有 | 无 |
+| `pNtReadVirtualMemory` 类型名 | 有 | 无 |
+| `InitImpl`（异常描述符内） | 有 | 仍有 |
+
+---
+
+## 7. 接入步骤
 
 1. 把 `src/hardened/` 加进 `src.vcxproj` 的 `ClInclude`（纯头文件，无需改 `build.bat` 的 `SRCS`）。
-2. `main.cpp` 顶部 `#include "hardened/hardened.hpp"`，`main()` 第一行调 `hardened::init()`。
+2. `main.cpp` 顶部 `#include "hardened/hardened.hpp"`，`main()` 里调 `hardened::init()`（在 `LogHelper::Init()` 之后，否则 `LOGF` 未初始化）。
 3. `Engine.cpp:73` 的 `process->AttachProcess("cs2.exe")` 换成 `secret::Reader::attach(pid, "client.dll")`，pid 从窗口句柄拿（`GetWindowThreadProcessId`），省掉 `CreateToolhelp32Snapshot`。
 4. `Memory.hpp` 的 `read` / `read_raw` 内部转调 `Reader::read`，保持签名不变，其余调用点一行不用改。
-5. `Window.cpp:117,137` 的 `"wa"` 换成 `overlay::random_class_name` / `random_title` 的输出。
+5. `Window.cpp:117,137` 的 `"wa"` 换成 `overlay::random_class_name` / `random_title` 的输出（**窄字符版**，见下）。
 6. `Window.cpp:70,100` 两处 `OpenProcess` 删除，统一走 `Reader`。
 7. 删 `Updater` 或改为菜单里的手动检查。
 8. 清理 `Menu.cpp:45,47,93`、`Overlays.cpp:76`、`main.cpp:35` 的项目名字面量。
 
+### 字符集陷阱
+
+`src.vcxproj` 是 `<CharacterSet>MultiByte</CharacterSet>`，所以 `CreateWindowEx` / `RegisterClassEx` 解析成 `...A` 版本，参数是 `LPCSTR`。窗口名必须用 `char` 数组。
+
+我第一版用了 `wchar_t`，本地 mingw 验证时手动加了 `-DUNICODE` 把问题掩盖了，MSVC 直接报：
+
+```
+error C2440: '=': cannot convert from 'wchar_t [128]' to 'LPCSTR'
+```
+
+`overlay.hpp` 现在同时提供宽/窄两套 `random_class_name` / `random_title`。
+
 ---
 
-## 7. 已验证 / 未验证
+## 8. 已验证 / 未验证
 
-**已验证**（本机 mingw 8.1，`-std=c++17 -O2`）：
+**已验证**（本机 mingw 8.1 `-std=c++17 -O2 -Wall -Wextra`）：
 - syscall stub 解析与自读（`status=0`，读到正确字节）
 - PEB 链定位 ntdll
 - 字符串加密后二进制无明文（逐字节搜索确认）
 - `Reader` 最小权限 attach，正例/反例均正确
-- 窗口名随机化输出
+- 窗口名随机化，窄字符版可成功 `RegisterClassEx`
+
+**已在真实构建产物上验证**（GitHub Actions，MSVC 14.44 / VS 2026）：
+- 完整项目编译通过，产出 x64 PE
+- 6.1–6.3 的泄漏项逐字节确认已消除
+- 功能字符串（`Could not find process`、`client.dll`、`engine2.dll`）仍在
 
 **未验证**：
-- 完整项目编译（本机无 MSVC、无 zig，且 4 个 submodule 目录为空：`imgui` / `json` / `AsyncLogger` / `curl`）
-- 真实 cs2.exe 上的 attach 与读取（需要游戏运行）
-- 任何形式的对抗性测试（这属于线上环境，不在本次范围内）
-
-要跑完整构建，需要先 `git submodule update --init --recursive`，再装 VS2022 或用 `scripts/build.bat`（需 zig）。
+- 真实 `cs2.exe` 上的 attach 与读取（需要游戏运行）
+- 任何形式的对抗性测试（属于线上环境，不在本次范围内）
 
 ---
 
