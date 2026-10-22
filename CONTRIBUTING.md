@@ -1,67 +1,66 @@
-# Contributing
+# 参与贡献
 
-Thanks for your interest in improving **cs2-external-esp**.
+感谢你有兴趣改进 **cs2-external-esp-hardened**。
 
-## What this project is
+## 这个项目是什么
 
-This is a **read-only** "mod" that provides ESP functionality only. *No* assists and *no* memory writing are allowed.
+一个**只读**的外部 ESP，仅提供视觉信息。**不允许**加入任何辅助功能，**不允许**写内存。
 
-## Non-Goals / Prohibited Behavior
+## 非目标 / 禁止的行为
 
-Do not submit code that:
+不要提交包含以下内容的代码：
 
-- Provides assists (aimbot, triggerbot, recoil control, movement assistance, etc.)
-- Writes to game memory or modifies memory at runtime
-- Attempts to bypass or evade game/anti-cheat protections
-- Includes malware, obfuscation intended to conceal behavior, or other harmful functionality
+- 提供辅助（自瞄、扳机、压枪、移动辅助等）
+- 写入游戏内存，或在运行时修改内存
+- 试图绕过或规避游戏/反作弊保护
+- 包含恶意代码、以隐藏行为为目的的混淆，或其他有害功能
 
-## Copyright, TOS, and Third-Party Assets
+## 版权、服务条款与第三方资源
 
-All contributions must comply with:
+所有贡献必须遵守：
 
-- The original game’s Terms of Service
-- Any applicable third-party Terms (including libraries/tools used by this project)
-- Copyright rules for all code, assets, and documentation
-- Licenses for any third-party libraries (including attribution/license text when required)
+- 原游戏的服务条款
+- 任何适用的第三方条款（包括本项目使用的库/工具）
+- 所有代码、资源和文档的版权规则
+- 任何第三方库的协议（需要时附上署名/协议文本）
 
-When in doubt, ask before submitting.
+拿不准就先问，再提交。
 
-## Code Quality Requirements
+## 代码质量要求
 
-We expect contributions to be:
+期望贡献满足：
 
-- **No "AI slop"**
-- Clean, readable, and maintainable
-- Consistent with the existing project structure and coding style
-- Properly implemented,working/compiling at the time of making the pr
+- **不要"AI 垃圾"** —— 堆量、注水、复制粘贴凑数的不收
+- 干净、可读、可维护
+- 与现有项目结构和代码风格一致
+- 提 PR 时确实能编译、能工作
 
-## Branching and Pull Requests
+## 分支与 PR
 
-There is no separate development branch. All pull requests target `main`.
+没有单独的开发分支，所有 PR 都指向 `main`。
 
-### PR workflow
+### PR 流程
 
-1. Create your branch and open a PR against `main`.
-2. Before opening the PR, update your branch with the latest changes from `main` so the PR includes current `main` state.
-3. Ensure the code compiles and works in the PR state after updating from `main`. 
-4. Make sure the PR improves the project (bug fixes, refactors with clear value, or new ESP features within the allowed scope).
-5. Address review feedback promptly.
-6. Maintainers will only merge when the PR is ready.
+1. 建分支，向 `main` 开 PR。
+2. 开 PR 前先把 `main` 的最新改动合进来，确保 PR 包含当前 `main` 状态。
+3. 确认合完 `main` 之后代码仍然能编译、能工作。
+4. 确保这个 PR 确实改进了项目（修 bug、有明确价值的重构，或允许范围内的新 ESP 功能）。
+5. 及时响应 review 意见。
+6. 维护者只在 PR 就绪时才合并。
 
+## 仅限 ESP 范围
 
-## ESP-Only Scope
+新功能必须保持在"仅 ESP、只读"的范围内。
 
-New functionality must stay within ESP-only, read-only behavior.
+- 允许：ESP 相关功能
+- 不允许：任何看起来像写内存或游戏辅助的东西
 
-- ESP features are allowed
-- Anything that resembles writing memory or gameplay assistance is not allowed
+## 提交你的贡献
 
-## Submitting Your Contribution
+开 PR 时请附上：
 
-Open a pull request with:
+- 清楚说明改了什么、为什么改
+- 相关的截图/日志
+- 做过哪些测试
 
-- A clear description of what you changed and why
-- Any relevant screenshots/logs
-- Notes on testing performed
-
-Thanks again, please keep contributions focused, correct, and respectful of game and third-party rules.
+再次感谢。请保持贡献聚焦、正确，并尊重游戏和第三方的规则。

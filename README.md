@@ -1,100 +1,95 @@
-# 🕹️ CS2 External ESP — Hardened Fork
+# 🕹️ CS2 External ESP — 加固分支
 
-> **Upstream:** [IMXNOOBX/cs2-external-esp](https://github.com/IMXNOOBX/cs2-external-esp) @ `58f02c1`
-> **This fork:** an audit-driven hardening pass. No gameplay features added or removed.
-> **License:** CC BY-NC 4.0 (inherited, unchanged — see [LICENSE](LICENSE))
+> **上游项目：** [IMXNOOBX/cs2-external-esp](https://github.com/IMXNOOBX/cs2-external-esp) @ `58f02c1`
+> **本仓库：** 一次以审计为驱动的隐蔽性加固。没有增加或删减任何游戏功能。
+> **协议：** CC BY-NC 4.0（继承上游，未改动 —— 见 [LICENSE](LICENSE)）
 
-External ESP for Counter-Strike 2. Pure external, read-only, no injection, no hooking,
-no touching the game thread. This fork keeps that architecture and removes the
-client-observable fingerprints the original shipped with.
+Counter-Strike 2 的外部 ESP。纯外部、只读、不注入、不 hook、不碰游戏线程。本分支保留
+这一架构，并去掉了原版会暴露给客户端的那些指纹。
 
----
-
-## ⚠️ Read this before anything else
-
-**What this is:** a code-hardening exercise on an open-source project, published so the
-diff is auditable.
-
-**What this is not:** a ban guarantee. CS2's enforcement is dominated by **server-side
-behavioural analysis and report-driven review** — that layer does not care how you read
-memory, it cares whether you play like a human. An ESP that only draws boxes is close to
-immune to behavioural detection, and equally exposed to being reported and reviewed by a
-person. Hardening reduces *client-side fingerprint* risk. It does nothing for *"your
-overlay is obviously not a normal UI"* risk. That is a settings problem, not a code problem.
-
-**Use:** single-player / offline / private servers only. You are accountable for your own
-actions; the upstream authors and this fork's maintainer accept no responsibility.
+完整的推导过程、`file:line` 证据和性价比排序，都在
+**[AUDIT-隐蔽性加固.md](AUDIT-隐蔽性加固.md)** 里。
 
 ---
 
-## What changed vs upstream
+## ⚠️ 先读这段
 
-The full reasoning, with `file:line` evidence and a cost/benefit ranking, is in
-**[AUDIT-隐蔽性加固.md](AUDIT-隐蔽性加固.md)**. Summary:
+**这是什么：** 对一个开源项目做的代码加固，公开出来是为了让 diff 可被审计。
 
-### 1. Removed write capability that was never used
+**这不是什么：** 不是免封承诺。CS2 现在的判定主要来自**服务端行为分析和举报驱动的复核**
+—— 那一层不关心你怎么读内存，只关心你打得像不像人。只画框、不改瞄准和移动的 ESP 对行为
+判定接近免疫，但同时完全暴露在"被人举报然后人工看"这条路上。加固降低的是**客户端特征**
+风险，对**"你这覆盖层一看就不是正常 UI"**这类风险毫无作用 —— 那是配置问题，不是代码问题。
 
-`src/core/memory/Memory.cpp:70` requested `PROCESS_VM_OPERATION`; `:100` requested
-`PROCESS_ALL_ACCESS`. Every write path in the project (`Allocate`, `FindCodeCave`,
-`write<T>`, `write_bytes`, `FindSignature(ProcessModule,…)`) has **zero call sites** —
-the entire write chain is dead code. A read-only ESP asking the kernel for write rights
-is pure downside: nothing depends on it, and it makes the handle look like something
-that intends to modify the game.
-
-Now: `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ` only.
-
-### 2. Handle lifetime is bounded
-
-The original held one handle for the whole session (`Memory.hpp:36`). Now handles carry a
-30 s TTL and are re-created, so no single handle covers an entire session.
-
-### 3. Reads no longer funnel through `ntdll!NtReadVirtualMemory`'s exported stub
-
-`Memory.hpp:67,85` constructed a `pMemory` on **every** read, each doing two
-`GetProcAddress` calls — at 5 ms cache refresh across 64 players that is tens of
-thousands of resolutions per second. Worse than the cost: it delivers every read to the
-exact function a user-mode hook would be planted on.
-
-Now: a syscall trampoline (`hardened/syscall.hpp`) built once, resolving the SSN by
-hashing export names (no `"ntdll.dll"`, no `"NtReadVirtualMemory"` string in the image),
-with Halo's Gate fallback if the stub is hooked. Page is RW → RX, never RWX.
-
-### 4. Window fingerprint is no longer identical for every user
-
-`src/gui/renderer/window/Window.cpp:117,137` hardcoded class name and title `"wa"`,
-combined with a fixed `WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW`
-full-screen popup. One `EnumWindows` pass matched it on every machine that built the repo.
-
-Now: class/title drawn from realistic framework names (`hardened/overlay.hpp`).
-
-### 5. Compile-time string encryption
-
-Project name, GitHub URLs and author strings were plaintext in `.rdata`
-(`Menu.cpp:45,47,93`, `Overlays.cpp:76`, `Updater.cpp:70,88`, `Updater.hpp:41`,
-`main.cpp:35`). `hardened/obf.hpp` encrypts literals at compile time.
-
-**Note the trap:** the inline `OBF("x")` form still leaves plaintext in `.rdata` —
-a by-reference-bound literal gets materialised. Only the namespace-scope `DEFOBJ(name, "x")`
-form is clean. Verified by byte-searching the produced binary both ways.
-
-### 6. Removed upstream mirroring
-
-`.github/workflows/mirror_gitlab.yml` and `mirror_codeberg.yml` pushed this repository to
-`gitlab.com/IMXNOOBX/...` and `codeberg.org/IMXNOOBX/...` using secrets this account does
-not have. Removed.
-
-### 7. Removed the four empty submodule references
-
-`src/external/{imgui,json,AsyncLogger,curl}` were gitlinks to commits that were never
-checked out — cloning produced empty directories and a build that could not possibly
-succeed. The gitlinks and `.gitmodules` are gone; see **Dependencies** below.
+**用途：** 仅限单人 / 离线 / 私服。你自己为自己的行为负责；上游作者和本分支维护者不承担
+任何责任。
 
 ---
 
-## Dependencies
+## 相对上游改了什么
 
-The four externals are **not vendored** in this fork (upstream tracked them as submodules;
-this fork drops the broken gitlinks). Fetch them into place before building:
+### 1. 删掉了从未使用的写入权限
+
+`src/core/memory/Memory.cpp:70` 申请了 `PROCESS_VM_OPERATION`；`:100` 申请了
+`PROCESS_ALL_ACCESS`。而项目里每一条写入路径（`Allocate`、`FindCodeCave`、`write<T>`、
+`write_bytes`、`FindSignature(ProcessModule,…)`）**调用点数量为零** —— 整条写入链是死代码。
+
+一个只读 ESP 向内核申请写权限，是纯粹的负收益：没有任何功能依赖它，但它让句柄在句柄表里
+看起来像"准备修改游戏内存的东西"。
+
+现在只申请：`PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`。
+
+### 2. 句柄生命周期有了上限
+
+原版整个会话只持有一个句柄（`Memory.hpp:36`）。现在句柄带 30 秒 TTL 会重建，没有单个
+句柄能覆盖整个会话。
+
+### 3. 读取不再集中打到 `ntdll!NtReadVirtualMemory` 的导出 stub
+
+`Memory.hpp:67,85` **每次读**都构造一个 `pMemory`，每次做两次 `GetProcAddress` —— 在 5ms
+缓存刷新、64 名玩家的规模下，每秒上万次解析。比开销更糟的是：它把每一次读都送到了用户态
+钩子最可能被安装的那个函数上。
+
+现在改成一次性构建的系统调用蹦床（`hardened/syscall.hpp`）：通过哈希导出名解析 SSN（镜像
+里不存在 `"ntdll.dll"`、`"NtReadVirtualMemory"` 字符串），stub 被 hook 时用 Halo's Gate
+反推。页属性 RW → RX，全程不出现 RWX。
+
+### 4. 窗口指纹不再每个用户都一样
+
+`src/gui/renderer/window/Window.cpp:117,137` 把类名和标题硬编码成 `"wa"`，配上固定的
+`WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW` 全屏 popup。
+一遍 `EnumWindows`，在每一台编译过这个仓库的机器上都能命中。
+
+现在类名/标题从真实的框架窗口名里随机取（`hardened/overlay.hpp`）。
+
+### 5. 编译期字符串加密
+
+项目名、GitHub 地址、作者名原本以明文躺在 `.rdata` 里（`Menu.cpp:45,47,93`、
+`Overlays.cpp:76`、`Updater.cpp:70,88`、`Updater.hpp:41`、`main.cpp:35`）。
+`hardened/obf.hpp` 在编译期把字面量加密。
+
+**这里有个坑要注意：** 内联的 `OBF("x")` 写法仍然会把明文留在 `.rdata` —— 按引用绑定的
+字面量被具现化了。只有命名空间作用域的 `DEFOBJ(name, "x")` 写法才是干净的。两种写法都
+用字节搜索验证过。
+
+### 6. 删掉了上游镜像
+
+`.github/workflows/mirror_gitlab.yml` 和 `mirror_codeberg.yml` 会把本仓库推送到
+`gitlab.com/IMXNOOBX/...` 和 `codeberg.org/IMXNOOBX/...`，用的是本账号没有的 secret。
+已删除。
+
+### 7. 删掉了四个空的 submodule 引用
+
+`src/external/{imgui,json,AsyncLogger,curl}` 是指向从未 checkout 过的 commit 的 gitlink ——
+clone 下来只会得到四个空目录，构建不可能成功。gitlink 和 `.gitmodules` 已移除，依赖获取
+方式见下方。
+
+---
+
+## 依赖
+
+这四个外部库在本分支里**没有内置**（上游是用 submodule 跟踪的，本分支去掉了那些坏掉的
+gitlink）。构建前先拉到对应位置：
 
 ```sh
 git clone --depth 1 https://github.com/ocornut/imgui            src/external/imgui
@@ -103,53 +98,76 @@ git clone --depth 1 https://github.com/Yimura/AsyncLogger       src/external/Asy
 git clone --depth 1 https://github.com/curl/curl                src/external/curl
 ```
 
-`src/external/lib/libcurl.lib` and `zlib.lib` are committed by upstream and still present.
+`src/external/lib/libcurl.lib` 和 `zlib.lib` 由上游提交，仍然保留。
 
 ---
 
-## Building
+## 构建
 
-**Visual Studio 2022** (or later): open `cs2-external-esp.sln`, build **`x64 - Release`**.
-Output lands in `x64/Release`.
+**Visual Studio 2022**（或更新）：打开 `cs2-external-esp.sln`，构建 **`x64 - Release`**。
+产物在 `x64/Release`。
 
-Alternatively `scripts/build.bat` with [zig](https://ziglang.org/) on `PATH`.
+或者用 `scripts/build.bat`，需要 [zig](https://ziglang.org/) 在 `PATH` 上。
 
-If the app fails to start, install the latest
-[VC++ redistributables](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
-(x64).
+如果程序启动即崩溃，装一下最新的
+[VC++ 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)（x64）。
 
-> The game must be in **fullscreen windowed**, not exclusive fullscreen.
+> 游戏必须是**全屏窗口化**，不能是独占全屏。
 
 ---
 
-## Hardened module
+## 加固模块
 
-`hardened/` is header-only and does not change existing call conventions — each part can
-be adopted independently.
+`src/hardened/` 是纯头文件，不改变现有调用约定 —— 每一部分都可以单独接入。
 
-| File | Purpose |
+| 文件 | 作用 |
 |---|---|
-| `hardened/obf.hpp` | Compile-time string encryption (`DEFOBJ` — not the inline `OBF` form) |
-| `hardened/syscall.hpp` | PEB→ntdll lookup, hash-resolved exports, syscall trampoline |
-| `hardened/secret.hpp` | Minimal-rights handle, TTL re-acquire, three-tier read fallback |
-| `hardened/overlay.hpp` | Randomised window class/title |
-| `hardened/hardened.hpp` | Single `hardened::init()` entry point |
+| `src/hardened/obf.hpp` | 编译期字符串加密（用 `DEFOBJ`，不要用内联 `OBF`） |
+| `src/hardened/syscall.hpp` | PEB→ntdll 定位、哈希解析导出、系统调用蹦床 |
+| `src/hardened/secret.hpp` | 最小权限句柄、TTL 重建、三级读取回退 |
+| `src/hardened/overlay.hpp` | 随机化窗口类名/标题 |
+| `src/hardened/hardened.hpp` | 单一入口 `hardened::init()` |
 
-Verified on this machine with mingw-w64 g++ 8.1 (`-std=c++17 -O2 -Wall -Wextra`, no
-warnings): syscall stub resolves and self-reads (`STATUS_SUCCESS`), PEB walk finds ntdll,
-string encryption leaves no plaintext in the binary, `Reader` attaches with the minimal
-mask and correctly rejects a mismatched module name.
+本机用 mingw-w64 g++ 8.1 验证通过（`-std=c++17 -O2 -Wall -Wextra`，零警告）：syscall
+蹦床能解析并成功自读（`STATUS_SUCCESS`），PEB 链能找到 ntdll，字符串加密后二进制里没有
+明文，`Reader` 能以最小权限 attach 并正确拒绝不匹配的模块名。
 
-**Not verified:** a full project build (no MSVC or zig on the audit machine, and the
-submodules were empty), and any behaviour against a live `cs2.exe`.
+**未验证：** 完整项目构建（审计机器上没有 MSVC 也没有 zig，且 submodule 是空的），以及
+任何针对真实 `cs2.exe` 的行为。
 
 ---
 
-## Credits & license
+## 署名与协议
 
-Original project by [**IMXNOOBX**](https://github.com/IMXNOOBX) and contributors, licensed
-**CC BY-NC 4.0**. Offset signatures derive from [**a2x**'s cs2-dumper](https://github.com/a2x/cs2-dumper).
+原项目由 [**IMXNOOBX**](https://github.com/IMXNOOBX) 及贡献者开发，协议
+**CC BY-NC 4.0**。偏移签名来自 [**a2x** 的 cs2-dumper](https://github.com/a2x/cs2-dumper)。
 
-This fork is a derivative work under the same license: attribution retained, changes
-documented in the audit report. **Non-commercial** — selling or sublicensing this material
-is not permitted by the license.
+本分支是基于同一协议的衍生作品：保留署名，改动记录在审计报告里。**禁止商用** ——
+本协议不允许销售或再授权本材料。
+
+---
+
+<details>
+<summary><b>English summary</b></summary>
+
+Audit-driven hardening fork of [IMXNOOBX/cs2-external-esp](https://github.com/IMXNOOBX/cs2-external-esp)
+@ `58f02c1`. Architecture unchanged: external, read-only, no injection, no hooking.
+
+Changes: dropped unused `PROCESS_VM_OPERATION` / `PROCESS_ALL_ACCESS` access rights
+(every write path in the project has zero call sites); bounded handle lifetime (30 s TTL);
+replaced the per-read `GetProcAddress(GetModuleHandleA("ntdll.dll"), ...)` pattern with a
+syscall trampoline resolved once by export hash (no plaintext API names, RW→RX, never RWX);
+per-process window class/title instead of the hardcoded `"wa"`; compile-time string
+encryption; removed upstream mirror workflows and four empty submodule gitlinks.
+
+Note: the inline `OBF("x")` form still leaves plaintext in `.rdata` — only the
+namespace-scope `DEFOBJ(name, "x")` form is clean. Verified by byte-searching the binary.
+
+Full reasoning with `file:line` evidence: [AUDIT-隐蔽性加固.md](AUDIT-隐蔽性加固.md).
+
+Verified with mingw-w64 g++ 8.1 `-Wall -Wextra` (clean); full project build not verified
+(no MSVC or zig on the audit machine, submodules were empty).
+
+Licensed CC BY-NC 4.0, inherited. Non-commercial.
+
+</details>

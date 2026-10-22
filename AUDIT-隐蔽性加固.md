@@ -1,8 +1,8 @@
-# cs2-external-esp 隐蔽性审计与加固
+﻿# cs2-external-esp 隐蔽性审计与加固
 
 对象：`IMXNOOBX/cs2-external-esp` @ `58f02c1`（main，Recode 第三代）
 本地路径：`D:\Users\35017\Desktop\cs2`
-交付：`hardened/`（5 个头文件，已在本机 mingw 8.1 编译并运行验证）
+交付：`src/hardened/`（5 个头文件，已在本机 mingw 8.1 编译并运行验证）
 
 ---
 
@@ -147,11 +147,11 @@ main.cpp:35   "Welcome to cs2-external-esp-recode!"
 
 ---
 
-## 3. 已交付：`hardened/` 模块
+## 3. 已交付：`src/hardened/` 模块
 
 五个头文件，全部在本机 mingw 8.1 编译并运行验证过（无 MSVC、无 zig、submodule 为空，所以用 mingw 验证语法与运行时行为）。
 
-### `hardened/obf.hpp` — 编译期字符串加密
+### `src/hardened/obf.hpp` — 编译期字符串加密
 
 把字面量变成 `.rdata` 里的密文，用时解密到栈上。
 
@@ -173,7 +173,7 @@ std::string name = kRead.dec();
 | `OBF(...)` 内联 | 存在 ❌ |
 | `DEFOBJ(...)` 命名空间作用域 | 不存在 ✅ |
 
-### `hardened/syscall.hpp` — 直调系统调用，绕开 ntdll 钩子
+### `src/hardened/syscall.hpp` — 直调系统调用，绕开 ntdll 钩子
 
 替换 `Memory.hpp:19-20` 的 `GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtReadVirtualMemory")`。
 
@@ -194,7 +194,7 @@ plaintext 'ntdll.dll'           present: False
 plaintext 'NtClose'             present: False
 ```
 
-### `hardened/secret.hpp` — 最小权限句柄 + TTL 重建
+### `src/hardened/secret.hpp` — 最小权限句柄 + TTL 重建
 
 - 权限降到 `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`，**不再要 `VM_OPERATION` / `ALL_ACCESS`**（对应 2.1、2.2）。
 - 句柄 30 秒 TTL 后重建（对应 2.3）。
@@ -210,7 +210,7 @@ attach(client.dll)=0 (expect 0)   ← 模块名不匹配时正确拒绝
 read self ok=1 val=1234
 ```
 
-### `hardened/overlay.hpp` — 窗口指纹随机化
+### `src/hardened/overlay.hpp` — 窗口指纹随机化
 
 - 类名从真实框架样式里随机取：`Chrome_WidgetWin_N`、`ApplicationFrame`、`DirectUIHWND`、`WindowsForms10.Window.N`、`HwndWrapper`、`MSCTFIME UI`、`ToolTips_Class32`。
 - 标题跟着类名走（类名 `ApplicationFrame` 配标题 `"wa"` 本身就是破绽）。
@@ -226,7 +226,7 @@ class=[ToolTips_Class326]  title=[]
 class=[ApplicationFrame5]  title=[]
 ```
 
-### `hardened/hardened.hpp` — 统一入口
+### `src/hardened/hardened.hpp` — 统一入口
 
 `hardened::init()` 一次调用完成播种 + stub 预热，并返回是否降级。
 
@@ -269,7 +269,7 @@ class=[ApplicationFrame5]  title=[]
 
 ## 6. 接入步骤
 
-1. 把 `hardened/` 加进 `src.vcxproj` 的 `ClInclude`（纯头文件，无需改 `build.bat` 的 `SRCS`）。
+1. 把 `src/hardened/` 加进 `src.vcxproj` 的 `ClInclude`（纯头文件，无需改 `build.bat` 的 `SRCS`）。
 2. `main.cpp` 顶部 `#include "hardened/hardened.hpp"`，`main()` 第一行调 `hardened::init()`。
 3. `Engine.cpp:73` 的 `process->AttachProcess("cs2.exe")` 换成 `secret::Reader::attach(pid, "client.dll")`，pid 从窗口句柄拿（`GetWindowThreadProcessId`），省掉 `CreateToolhelp32Snapshot`。
 4. `Memory.hpp` 的 `read` / `read_raw` 内部转调 `Reader::read`，保持签名不变，其余调用点一行不用改。

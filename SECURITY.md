@@ -1,35 +1,43 @@
-# Security Policy
+# 安全策略
 
-## Supported Versions
+## 支持的版本
 
-Only the latest release version is supported for security detections.
+只有最新的发布版本会处理安全相关的问题反馈。
 
-## Reporting a Vulnerability
+## 报告漏洞
 
-If you believe you’ve found a security vulnerability in this "mod", please report it to: `security <at> noob.pm`.
+如果你认为在本项目中发现了安全漏洞，请提交到 GitHub Issue，并打上 `security` 标签。
 
-What to include in your report:
+> **注意：** 上游的 `security <at> noob.pm` 邮箱属于原作者 IMXNOOBX，**请不要把本分支的漏洞
+> 报告发到那里**。上游没有参与本分支的改动，也不负责它的安全问题。
 
-- A clear description of the issue
-- Steps to reproduce (if applicable)
-- Expected vs actual behavior
-- Any relevant logs, screenshots, or files
-- Your CS2 version and "mod" environment details
+报告里请包含：
 
-## Reporting Detections (Ban Triggers / False Positives)
+- 问题的清晰描述
+- 复现步骤（如果适用）
+- 预期行为与实际行为
+- 相关日志、截图或文件
+- 你的 CS2 版本和环境信息
 
-If the "mod" is suspected of triggering game bans, false positives, or other enforcement actions, please report it to: `security <at> noob.pm`.
+## 报告检测结果（封禁触发 / 误报）
 
-Videos are recommended to reproduce and clarify what occurred. Include as much of the following as you can:
+这一节要如实说清楚：**本分支无法承诺"不会被封"**。
 
-- CS2 "mod" version (**must be the latest release**)
-- "Mod" environment details
-- Date/time and timezone
-- What happened (behavior description) and when the enforcement occurred
-- Player/server identifiers as available (avoid sharing unnecessary personal data)
-- Evidence: video(s) and/or screenshots, plus relevant server/client logs
+CS2 的判定主要来自服务端行为分析和举报驱动的复核，那一层不看你怎么读内存。ESP 只画框、
+不改瞄准和移动，对行为判定接近免疫，但完全暴露在"被举报后人工复核"这条路上。加固降低的
+是客户端特征风险，对使用行为的暴露没有任何作用。
 
-What to expect:
+如果你在用本分支时遇到封禁或疑似误报，请开 Issue 并附上：
 
-- We may ask follow-up questions to confirm impact and determine whether the report is a false positive or a compatibility issue
-- If confirmed, we’ll prioritize changes intended to reduce or eliminate ban triggers
+- 本分支的 commit（**必须是最新的**）
+- 环境信息
+- 时间与时区
+- 发生了什么，以及封禁发生在什么时候
+- 证据：视频/截图，以及相关的服务端或客户端日志
+
+能提供什么：
+
+- 我会追问细节，判断是代码问题还是使用方式问题
+- 如果确认是代码层面的特征问题，会优先修改
+
+**不能提供什么：** 任何形式的解封协助，或对"不会被封"的保证。

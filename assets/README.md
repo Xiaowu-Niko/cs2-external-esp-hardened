@@ -1,17 +1,17 @@
-# Assets
+# 资源文件
 
-To work with this con fonts you will need [fontforge](https://github.com/fontforge) installed in your system.
+要编辑这些图标字体，需要在本机安装 [fontforge](https://github.com/fontforge)。
 
-## Icons
+## 图标
 
-This `font` (`icons.sfd`) contains all menu and UI icons used throughout the application.
+`icons.sfd` 包含应用里所有菜单和 UI 图标。
 
-## Weapons
+## 武器
 
-This `font` (`weapons.sfd`) contains all in-game weapon icons.
+`weapons.sfd` 包含游戏内所有武器图标。
 
 > [!NOTE]
-> Credits to authors
-> * [**Scarlab**](https://www.svgrepo.com/author/scarlab): [Solid Oval Interface Icons Collection](https://www.svgrepo.com/collection/scarlab-solid-oval-interface-icons/) (MIT License)
+> 图标来源署名
+> * [**Scarlab**](https://www.svgrepo.com/author/scarlab)：[Solid Oval Interface Icons Collection](https://www.svgrepo.com/collection/scarlab-solid-oval-interface-icons/)（MIT 协议）
 
-> Icons in this project are sourced from free, non-copyrighted sources
+> 本项目使用的图标均来自免费、无版权限制的来源。
