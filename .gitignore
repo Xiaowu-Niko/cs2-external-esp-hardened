@@ -413,3 +413,13 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# ---------------------------------------------------------------------------
+# Vendored externals — cloned by the developer (or by the release workflow),
+# never committed. Upstream tracked these as submodules; this fork dropped the
+# broken gitlinks, so they are fetched into place instead. See README.
+# ---------------------------------------------------------------------------
+/src/external/AsyncLogger/
+/src/external/curl/
+/src/external/imgui/
+/src/external/json/

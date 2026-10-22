@@ -16,6 +16,7 @@
 
 #pragma once
 #include <windows.h>
+#include <intrin.h>      // __readgsqword
 #include <cstdint>
 #include <cstring>
 

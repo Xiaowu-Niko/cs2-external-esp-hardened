@@ -9,6 +9,11 @@
 #include <iostream>
 #include <Psapi.h>
 
+// EnumProcessModulesEx / GetModuleInformation / GetModuleBaseNameW live in
+// psapi.lib. MSVC's default library set does not include it, so link it here
+// rather than relying on the project's AdditionalDependencies being edited.
+#pragma comment(lib, "psapi.lib")
+
 #include "hardened/syscall.hpp"
 #include "hardened/secret.hpp"
 
