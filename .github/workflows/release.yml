@@ -75,23 +75,31 @@ jobs:
         run: |
           set -e
           python - <<'PY'
-          import pathlib, re
-          p = pathlib.Path("src/external/AsyncLogger/src/LogIntermediate.hpp")
-          s = p.read_text(encoding="utf-8")
-          before = s.count("std::source_location::current()")
-          s = s.replace("std::source_location::current()",
-                        "std::source_location{ 0, 0, nullptr, nullptr }")
-          p.write_text(s, encoding="utf-8")
-          print(f"patched {before} default-argument sites in {p}")
+          import pathlib
 
-          # LOG() has the same default-argument capture.
-          q = pathlib.Path("src/external/AsyncLogger/include/AsyncLogger/Logger.hpp")
-          t = q.read_text(encoding="utf-8")
-          n = t.count("std::source_location::current()")
-          t = t.replace("std::source_location::current()",
-                        "std::source_location{ 0, 0, nullptr, nullptr }")
-          q.write_text(t, encoding="utf-8")
-          print(f"patched {n} default-argument sites in {q}")
+          # std::source_location() default-constructs an empty location: no file,
+          # no function, line 0. MSVC rejects a braced nullptr initialiser here
+          # (error C2440), so use the default constructor instead.
+          EMPTY = "std::source_location()"
+          OLD   = "std::source_location::current()"
+
+          targets = [
+              "src/external/AsyncLogger/src/LogIntermediate.hpp",
+              "src/external/AsyncLogger/include/AsyncLogger/Logger.hpp",
+          ]
+          total = 0
+          for t in targets:
+              p = pathlib.Path(t)
+              s = p.read_text(encoding="utf-8")
+              n = s.count(OLD)
+              if n:
+                  s = s.replace(OLD, EMPTY)
+                  p.write_text(s, encoding="utf-8")
+              print(f"{t}: patched {n} site(s)")
+              total += n
+          if total == 0:
+              raise SystemExit("::error::no source_location sites patched — upstream layout changed")
+          print(f"total: {total}")
           PY
 
       - name: Set up MSBuild
