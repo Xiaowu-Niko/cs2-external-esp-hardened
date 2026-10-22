@@ -34,8 +34,9 @@ public:
 	static WNDCLASSEX wc;
 
 	// Per-process window identity (was a hardcoded "wa" literal).
-	static wchar_t class_name[128];
-	static wchar_t window_title[128];
+	// Narrow chars: the project uses CharacterSet=MultiByte.
+	static char class_name[128];
+	static char window_title[128];
 
 	static bool IsWindowInForeground(HWND window) { return GetForegroundWindow() == window; }
 	static bool BringToForeground(HWND window) { return SetForegroundWindow(window); }

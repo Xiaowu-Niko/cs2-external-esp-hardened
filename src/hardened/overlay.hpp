@@ -100,6 +100,52 @@ inline void random_title(wchar_t* out, size_t cap) {
     wcopy(out, cap, titles[next_u32() % n]);
 }
 
+// ---- narrow (ANSI) variants ----------------------------------------------
+//
+// The project is built with <CharacterSet>MultiByte</CharacterSet>, so the
+// Win32 entry points resolve to the ...A variants and take LPCSTR. Providing
+// wide strings here is a compile error (verified on the CI build:
+// "cannot convert from 'wchar_t [128]' to 'LPCSTR'"). These are the ones the
+// window code actually calls.
+
+inline void acopy(char* dst, size_t cap, const char* src) {
+    if (!cap) return;
+    size_t i = 0;
+    for (; src && src[i] && i + 1 < cap; ++i) dst[i] = src[i];
+    dst[i] = 0;
+}
+
+inline size_t alen(const char* s) { size_t n = 0; while (s && s[n]) ++n; return n; }
+
+inline void aappend_u32(char* dst, size_t cap, uint32_t v) {
+    char tmp[12];
+    int n = 0;
+    if (!v) { tmp[n++] = '0'; }
+    while (v) { tmp[n++] = static_cast<char>('0' + (v % 10)); v /= 10; }
+    size_t at = alen(dst);
+    for (int i = n - 1; i >= 0 && at + 1 < cap; --i) dst[at++] = tmp[i];
+    dst[at] = 0;
+}
+
+inline void random_class_name(char* out, size_t cap) {
+    static const char* prefixes[] = {
+        "Chrome_WidgetWin_", "ApplicationFrame", "DirectUIHWND",
+        "WindowsForms10.Window.", "Chrome_RenderWidgetHostHWND",
+        "HwndWrapper", "MSCTFIME UI", "ToolTips_Class32",
+    };
+    const size_t n = sizeof(prefixes) / sizeof(prefixes[0]);
+    acopy(out, cap, prefixes[next_u32() % n]);
+    aappend_u32(out, cap, 1 + (next_u32() % 8));
+}
+
+inline void random_title(char* out, size_t cap) {
+    static const char* titles[] = {
+        "", "Default IME", "", "MSCTFIME UI",
+    };
+    const size_t n = sizeof(titles) / sizeof(titles[0]);
+    acopy(out, cap, titles[next_u32() % n]);
+}
+
 // Recommendation surface — these are the choices that actually change how the
 // window reads to an external observer, ordered by value.
 struct WindowProfile {

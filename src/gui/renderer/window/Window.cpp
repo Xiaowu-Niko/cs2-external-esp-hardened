@@ -15,8 +15,11 @@ WNDCLASSEX Window::wc = { };
 // Was: a hardcoded "wa" class name and "wa" title, identical on every machine
 // that built this repo. One EnumWindows pass keyed on the class name found it.
 // Now generated per-process from realistic framework names.
-wchar_t Window::class_name[128] = { };
-wchar_t Window::window_title[128] = { };
+//
+// Narrow chars because the project builds with CharacterSet=MultiByte, so the
+// Win32 calls below resolve to the ...A variants.
+char Window::class_name[128] = { };
+char Window::window_title[128] = { };
 
 extern LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam);
 

@@ -34,18 +34,30 @@ jobs:
           fetch-depth: 0
 
       # The fork dropped the four broken submodule gitlinks, so fetch the
-      # externals explicitly. Pinned to the same commits upstream referenced
-      # where possible; --depth 1 keeps the job fast.
+      # externals explicitly. Pinned to the exact commits upstream referenced:
+      # imgui in particular MUST be pinned — the code uses ImGuiCol_TabActive /
+      # ImGuiCol_TabUnfocused and the multi-viewport API, which were renamed and
+      # moved in later imgui releases. Cloning imgui HEAD breaks the build.
       - name: Fetch externals
         shell: bash
         run: |
           set -e
-          git clone --depth 1 https://github.com/ocornut/imgui      src/external/imgui
-          git clone --depth 1 https://github.com/nlohmann/json      src/external/json
-          git clone --depth 1 https://github.com/Yimura/AsyncLogger src/external/AsyncLogger
-          git clone --depth 1 https://github.com/curl/curl          src/external/curl
+          fetch_pinned() {
+            local name="$1" url="$2" sha="$3"
+            rm -rf "src/external/$name"
+            git init -q "src/external/$name"
+            git -C "src/external/$name" remote add origin "$url"
+            git -C "src/external/$name" fetch -q --depth 1 origin "$sha"
+            git -C "src/external/$name" checkout -q FETCH_HEAD
+            rm -rf "src/external/$name/.git"
+          }
+          fetch_pinned imgui      https://github.com/ocornut/imgui      1d942eb6c9ef0b68cd1515df083d06da651b0d61
+          fetch_pinned json       https://github.com/nlohmann/json      af524ab666359f09a16bca1a41543a9a3a941251
+          fetch_pinned AsyncLogger https://github.com/Yimura/AsyncLogger 25b5ed31b33c40fabc6b80213c330a10cccf3b49
+          fetch_pinned curl       https://github.com/curl/curl          217f0e4d59717fa2a9fd428a4e7458dde26e6e94
           echo "--- layout check ---"
           ls src/external/imgui/imgui.h
+          grep '#define IMGUI_VERSION ' src/external/imgui/imgui.h
           ls src/external/json/include/nlohmann/json.hpp
           ls src/external/AsyncLogger/include/AsyncLogger/Logger.hpp
           ls src/external/curl/include/curl/curl.h
