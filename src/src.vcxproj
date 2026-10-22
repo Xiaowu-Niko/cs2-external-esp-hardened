@@ -170,6 +170,12 @@
            handed a signature scanner the function names, the type names
            (pNtReadVirtualMemory) and the exact upstream repo it was built from. -->
       <DebugInformationFormat>None</DebugInformationFormat>
+      <!-- /GR- : with RTTI on, MSVC emits mangled type names such as
+           "?AV<lambda_1>@?1??InitImpl@LogHelper@@AEAA_NXZ@" for every lambda and
+           every class with a vtable. Those reconstruct the project's internal
+           structure. Grepped the tree (project + imgui + AsyncLogger): no
+           dynamic_cast, no typeid, so nothing depends on it. -->
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
