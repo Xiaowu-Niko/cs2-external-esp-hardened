@@ -1,4 +1,4 @@
-#include "Config.hpp"
+﻿#include "Config.hpp"
 
 bool Config::Read() {
 	return GetInstance().ReadImpl();
@@ -244,7 +244,7 @@ bool Config::WriteImpl() {
 	f << std::setw(4) << data << std::endl;
 	f.close();
 
-	LOGF(VERBOSE, "Writting configuration to file");
+	LOGF(VERBOSE, "Writing configuration to file");
 
 	return true;
 }

@@ -1,4 +1,4 @@
-#include "Esp.hpp"
+﻿#include "Esp.hpp"
 
 #include "gui/renderer/Renderer.hpp"
 #include "assets/fonts/WeaponIcons.h"
@@ -119,7 +119,7 @@ void Esp::RenderPlayer(Player player, bool mate) {
 		RenderPlayerTracker(player, bounds, mate);
 
 	RenderPlayerBars(player, bounds);
-	RenderPlayerFalgs(player, bounds, mate);
+	RenderPlayerFlags(player, bounds, mate);
 }
 
 void Esp::RenderPlayerBones(Player player, bool mate) {
@@ -235,7 +235,7 @@ void Esp::RenderPlayerBars(Player player, std::pair<Vec2_t, Vec2_t> bounds) {
 	}
 }
 
-void Esp::RenderPlayerFalgs(Player player, std::pair<Vec2_t, Vec2_t> bounds, bool mate) {
+void Esp::RenderPlayerFlags(Player player, std::pair<Vec2_t, Vec2_t> bounds, bool mate) {
 	if (cfg::esp::flags::name) {
 		auto sanitized_name = std::format("{}{}", player.name, (player.bot ? " (Bot)" : ""));
 		auto name_size = ImGui::CalcTextSize(sanitized_name.data());

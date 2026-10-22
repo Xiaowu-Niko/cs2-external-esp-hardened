@@ -1,9 +1,29 @@
 name: Typo Check CI
-on: 
+
+# Upstream shipped this with three problems that made it fail on every push:
+#   1. `token: ${{ secrets.GIT_PAT }}` — that secret does not exist in this
+#      repo, so create-pull-request aborted with
+#      "Input 'token' not supplied". A fork only needs GITHUB_TOKEN.
+#   2. `files: ./memory-external` — that directory does not exist; the source
+#      lives in src/. The checker was pointed at nothing.
+#   3. No `permissions:` block, so GITHUB_TOKEN had no write access to open a PR.
+#
+# It now checks src/ and only opens a PR when typos are actually found.
+
+on:
+  workflow_dispatch:
   push:
     branches:
       - main
-    #   - auto-build # Testing
+    paths:
+      - '**.md'
+      - 'src/**'
+      - '.github/typos.toml'
+      - '.github/workflows/typos.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   run:
@@ -11,29 +31,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Check spelling of SRC folder
-      uses: crate-ci/typos@master
-      with:
-        files: ./memory-external
-        config: .github/typos.toml
-        write_changes: true  # Write changes if typos are detected
-      continue-on-error: true
+      - name: Check spelling
+        uses: crate-ci/typos@master
+        with:
+          files: ./src
+          config: .github/typos.toml
+          write_changes: true
+        continue-on-error: true
 
-    - name: Create pull request
-      uses: peter-evans/create-pull-request@v5
-      with:
-        token: ${{ secrets.GIT_PAT }}
-        commit-message: "Fix typos detected by typos GitHub action"
-        # author: ${{ secrets.GIT_USER_NAME }} <${{ secrets.GIT_USER_NAME }}@users.noreply.github.com>
-        signoff: false
-        branch: typos-fix
-        delete-branch: true
-        title: "Fix typos"
-        body: |
-          Fixed typos
-           - This pull request fixes typos detected by the typo-check GitHub action.
-        labels: typo
-        assignees: Xiaowu-Niko
+      # Only run when the step above actually rewrote something. Without this
+      # guard the action still runs on a clean tree and fails on a no-op diff.
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Fix typos detected by typos GitHub action"
+          signoff: false
+          branch: typos-fix
+          delete-branch: true
+          title: "Fix typos"
+          body: |
+            Fixed typos
+             - This pull request fixes typos detected by the typo-check GitHub action.
+          labels: typo

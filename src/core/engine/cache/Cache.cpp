@@ -1,4 +1,4 @@
-#include "Cache.hpp"
+﻿#include "Cache.hpp"
 
 #include "core/engine/Engine.hpp" // Circular dep
 #include "core/offsets/Dumper.hpp"
@@ -63,7 +63,7 @@ bool Cache::RefreshImpl() {
         //if (player.localplayer && (this->local.index == -1 || this->local.index == player.index))
         //    this->local = player;
         //else if (player.localplayer)
-        //    LOGF(FATAL, "Offset missmatch, initial({}) current({}) there are more than one local players, update needed", this->local.index, player.index);
+        //    LOGF(FATAL, "Offset mismatch, initial({}) current({}) there are more than one local players, update needed", this->local.index, player.index);
     
         scan.push_back(player);
     }

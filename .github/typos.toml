@@ -1,6 +1,37 @@
+# typos configuration — https://github.com/crate-ci/typos
+#
+# The checker scans ./src (see typos.yml). These exclusions keep it focused on
+# prose and identifiers we control, not on vendored code or generated tables.
+
 [files]
 extend-exclude = [
+  # Vendored externals — cloned by CI, not part of this fork's source.
+  "src/external/**",
+  # Generated font/icon tables: hundreds of thousands of bytes of glyph data.
+  "src/assets/fonts/**",
   "**/include/**",
   "**/classes/**",
   "**/x64/**",
 ]
+
+[default]
+# Words that look like typos but are real identifiers in this codebase.
+extend-ignore-re = [
+  # Game/engine identifiers and offset names.
+  "m_[a-zA-Z_]+",
+  # Windows API names that trip the dictionary (e.g. NtReadVirtualMemory).
+  "Nt[A-Z][a-zA-Z]+",
+  # Hex constants and offsets.
+  "0x[0-9a-fA-F]+",
+  # Source paths in comments.
+  "D:\\\\a\\\\[^\\s]+",
+]
+
+[default.extend-words]
+# Valve's weapon/agent enum IDs. These are upstream names from the game itself —
+# `customplayer_ctm_st6_variante` in Weapons.hpp must keep its spelling or the
+# item index no longer matches what the game reports.
+variante = "variante"
+# CS2 / Source engine terminology.
+pawn = "pawn"
+pawns = "pawns"

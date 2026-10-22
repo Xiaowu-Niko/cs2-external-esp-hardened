@@ -1,4 +1,4 @@
-#include "Updater.hpp"
+﻿#include "Updater.hpp"
 
 bool Updater::Init() {
 	return GetInstance().InitImpl();
@@ -23,7 +23,7 @@ bool Updater::InitImpl() {
 		LOGF(FATAL, "Failed to parse status json");
 
 	if (http_status != 200) {
-		LOGF(FATAL, "Server returned non successfull status code {}", http_status);
+		LOGF(FATAL, "Server returned non successful status code {}", http_status);
 		return false;
 	}
 
@@ -49,7 +49,7 @@ bool Updater::InitImpl() {
 	else if (status.version_current > current_version)
 		LOGF(WARNING, "There is a newer version available, current version is {} and github version is {}", current_version, status.version_current);
 	else if (status.version_current != current_version)
-		LOGF(WARNING, "Version missmatch detected, current version is {} and github version is {}", current_version, status.version_current);
+		LOGF(WARNING, "Version mismatch detected, current version is {} and github version is {}", current_version, status.version_current);
 	else if (!status.notice.empty())
 		LOGF(WARNING, "Developer notice: {}", status.notice);
 

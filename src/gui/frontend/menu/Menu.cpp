@@ -1,4 +1,4 @@
-#include "Menu.hpp"
+﻿#include "Menu.hpp"
 
 #include "core/engine/cache/Cache.hpp"
 #include "gui/renderer/Renderer.hpp" // Circular dependency
@@ -316,7 +316,7 @@ void Menu::RenderImpl() {
 						"If you experience bad performance/lag try the following:\n"
 						"\t- Disable ESP VSync: Look up > VSync: Un-Check\n"
 						"\t- Disable VSync in game: ...Advanced Video > V-Sync: Disabled\n"
-						"\t- Last Resort: Disable \"Free CPU\" option, it will inpact on your overall performace, but improve latency\n"
+						"\t- Last Resort: Disable \"Free CPU\" option, it will impact your overall performance, but improve latency\n"
 					);
 
 #ifdef _DEBUG

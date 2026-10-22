@@ -1,4 +1,4 @@
-#include "HttpHelper.hpp"
+﻿#include "HttpHelper.hpp"
 
 int HttpHelper::Get(std::string url, json& response) {
 	return GetInstance().GetImpl(url, response);
@@ -27,7 +27,7 @@ int HttpHelper::GetImpl(std::string url, json& response) {
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        LOGF(WARNING, "Curl returned a non successfull status code {}", (int)res);
+        LOGF(WARNING, "Curl returned a non successful status code {}", (int)res);
         return -1;
     }
 

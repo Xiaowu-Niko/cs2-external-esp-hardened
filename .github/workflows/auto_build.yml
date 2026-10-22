@@ -1,39 +1,98 @@
 name: Build Project
 
+# Quick compile check on push. Produces no release; see release.yml for that.
+#
+# The externals (imgui/json/AsyncLogger/curl) are NOT tracked as submodules in
+# this fork — upstream's four gitlinks pointed at commits that were never
+# checked out, so cloning produced empty directories. This job therefore has to
+# fetch them explicitly, pinned to the exact commits upstream referenced.
+#
+# imgui MUST stay pinned: the code uses ImGuiCol_TabActive / ImGuiCol_TabUnfocused
+# and the multi-viewport API, all of which were renamed or moved in later releases.
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      # - cs2-recode
-      # - auto-build # testing
     paths:
       - '**/*.sln'
+      - '**/*.vcxproj'
       - '**/*.cpp'
       - '**/*.hpp'
-      - '**/*.c'
       - '**/*.h'
+      - '.github/workflows/auto_build.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Set up MSBuild
-      uses: microsoft/setup-msbuild@v1
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Build solution
-      env:
-        VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
-      run: msbuild cs2-external-esp.sln /p:Configuration=Release
+      - name: Fetch externals
+        shell: bash
+        run: |
+          set -e
+          fetch_pinned() {
+            local name="$1" url="$2" sha="$3"
+            rm -rf "src/external/$name"
+            git init -q "src/external/$name"
+            git -C "src/external/$name" remote add origin "$url"
+            git -C "src/external/$name" fetch -q --depth 1 origin "$sha"
+            git -C "src/external/$name" checkout -q FETCH_HEAD
+            rm -rf "src/external/$name/.git"
+          }
+          fetch_pinned imgui       https://github.com/ocornut/imgui        1d942eb6c9ef0b68cd1515df083d06da651b0d61
+          fetch_pinned json        https://github.com/nlohmann/json        af524ab666359f09a16bca1a41543a9a3a941251
+          fetch_pinned AsyncLogger https://github.com/Yimura/AsyncLogger  25b5ed31b33c40fabc6b80213c330a10cccf3b49
+          fetch_pinned curl        https://github.com/curl/curl           217f0e4d59717fa2a9fd428a4e7458dde26e6e94
+          echo "--- layout check ---"
+          ls src/external/imgui/imgui.h
+          grep '#define IMGUI_VERSION ' src/external/imgui/imgui.h
+          ls src/external/json/include/nlohmann/json.hpp
+          ls src/external/AsyncLogger/include/AsyncLogger/Logger.hpp
+          ls src/external/curl/include/curl/curl.h
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: |
-          x64/Release/*
+      # Same source_location strip as release.yml — see the comment there.
+      - name: Strip source_location from build
+        shell: bash
+        run: |
+          set -e
+          python - <<'PY'
+          import pathlib
+          EMPTY = "std::source_location()"
+          OLD   = "std::source_location::current()"
+          total = 0
+          for t in ("src/external/AsyncLogger/src/LogIntermediate.hpp",
+                    "src/external/AsyncLogger/include/AsyncLogger/Logger.hpp"):
+              p = pathlib.Path(t)
+              s = p.read_text(encoding="utf-8")
+              n = s.count(OLD)
+              if n:
+                  p.write_text(s.replace(OLD, EMPTY), encoding="utf-8")
+              print(f"{t}: patched {n} site(s)")
+              total += n
+          if total == 0:
+              raise SystemExit("::error::no source_location sites patched — upstream layout changed")
+          PY
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Build solution
+        run: msbuild cs2-external-esp.sln /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            x64/Release/*.exe
+          if-no-files-found: error
