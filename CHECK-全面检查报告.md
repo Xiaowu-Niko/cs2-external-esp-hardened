@@ -273,13 +273,94 @@ bool operator==(const float o) const { return x == y && y == o; }  // 拿两个�
 
 ---
 
-## 十、最终状态
+## 十一、第三轮：反 VAC 相关（读取隐蔽性）
+
+上一轮之后我核查了「加固模块是否真的接入了主路径」，发现**一半没有**，而且已发布 exe 的导入表暴露了三处硬伤。
+
+### 11.1 之前真正做到的 vs 没做到的
+
+| 项 | 状态（v10 之前） |
+|---|---|
+| `ReadProcessMemory` 从二进制消失 | ✅ 真做到（走 syscall 蹦床） |
+| `NtReadVirtualMemory` 明文消失 | ✅ 真做到 |
+| 最小权限（去掉 VM_OPERATION） | ✅ 真做到 |
+| 窗口名随机化 | ✅ 真做到 |
+| **Toolhelp 进程/模块枚举** | ❌ **仍在用** |
+| **curl 拖进整个网络+PKI 栈** | ❌ **仍在导入表里** |
+| **句柄整个会话不关** | ❌ **没接入 `secret::Reader`** |
+| **读取频率 5ms** | ❌ **每秒约 19 万次** |
+
+`secret::Reader` 写好了但主路径根本没用——这是「写了但没接上」的典型。
+
+### 11.2 Toolhelp 枚举（最典型的作弊特征）
+
+`Memory.cpp` 原来：
+
+```cpp
+FindProcessIdByProcessName → CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)
+                           + Process32First/Next 比对 szExeFile
+GetModule                 → CreateToolhelp32Snapshot(TH32CS_SNAPMODULE)
+                           + Module32NextW
+```
+
+没有任何正常覆盖层会把整机进程快照下来按名字找游戏。已全部移除，`tlhelp32.h` 不再 include。
+
+替换为：`EnumWindows` + `QueryFullProcessImageNameW`（只碰有可见顶层窗口的进程，普通桌面程序本来就这么做）；模块用 `EnumProcessModulesEx` 在已持有的句柄上完成。
+
+### 11.3 curl 把 PKI 证书链拖进导入表
+
+即使 `check_updates` 默认关闭，静态链接的 libcurl 仍让导入表带上：
+
+```
+WS2_32.dll   getaddrinfo, WSAEventSelect, WSAIoctl, inet_pton
+CRYPT32.dll  CertCreateCertificateChainEngine, PFXImportCertStore, CryptQueryObject
+bcrypt.dll   BCryptGenRandom
+ADVAPI32.dll CryptAcquireContextW, CryptImportKey, CryptEncrypt
+```
+
+**一个 DirectX 覆盖层里带完整 PKI 证书链实现**，是扫描器能看到的最反常组合之一，而它在默认配置下完全用不到。
+
+改为 `ENABLE_HTTP_UPDATER` 宏包裹，不定义时 `Get`/`Post` 是不碰网络的桩函数。
+
+### 11.4 句柄短命化
+
+`AttachProcess` 开一次就一直持有。现在 `kHandleTtlMs = 30000`，`read`/`read_raw` 前调 `refresh_handle()`，过期就 `NtClose` 后重开。关闭走 `NtClose` 而非 `CloseHandle`。pid 失效时自动重新解析。
+
+### 11.5 读取频率 5ms → 16ms
+
+64 名玩家下每轮约 960 次读取，5ms 一轮约 **19 万次/秒**。16ms 对齐 60Hz，观感无差别，调用量降到约三分之一。做成 `cfg::settings::refresh_ms`（菜单有滑条），视图矩阵不受节流以保证不跟手。
+
+### 11.6 效果（v10 → v11）
+
+| 项 | v10 | v11 |
+|---|---|---|
+| exe 大小 | 1,674,752 | **1,163,776**（-511 KB） |
+| 导入 DLL 数 | 24 | **20** |
+| `WS2_32` / `CRYPT32` / `bcrypt` / `ADVAPI32` | 有 | **无** |
+| `CreateToolhelp32Snapshot` | 有 | **无** |
+| `Process32FirstW` / `Process32NextW` / `Module32NextW` | 有 | **无** |
+| `CertCreateCertificateChainEngine` | 有 | **无** |
+| `PFXImportCertStore` | 有 | **无** |
+| `getaddrinfo` / `WSAEventSelect` | 有 | **无** |
+| `BCryptGenRandom` | 有 | **无** |
+| `OpenProcess` / `EnumProcessModulesEx` / `EnumWindows` | 有 | 有（功能需要，正常） |
+| 构建路径 / 函数签名 / 类型名泄漏 | 干净 | 干净 |
+
+剩下的导入全是图形与 CRT：`KERNEL32`、`USER32`、`GDI32`、`SHELL32`、`d3d11`、`dxgi`、`dwmapi`、`IMM32`、`D3DCOMPILER_47`、`MSVCP140`/`VCRUNTIME140` 及 `api-ms-win-crt-*`。**这就是一个正常 DirectX 覆盖层该有的样子。**
+
+### 11.7 必须说清的边界
+
+以上改的全是**客户端可观测面**。VAC 现在实际主导的是**服务端行为判定与举报复核**——那部分不看你怎么读内存，看你打得像不像人。
+
+降低调用密度能减少可采样样本，去掉 Toolhelp 和 PKI 导入能减少静态特征，但**不会让「被人举报后人工复核」这条路变安全**。ESP 只画框不改瞄准移动，对行为判定接近免疫；但框开满、画面密度远超正常 UI，截图一眼就能看出来——那是配置问题，不是代码问题。
+
+
 
 | 项 | 值 |
 |---|---|
-| HEAD | `e4028bb` |
-| 最新发布 | **v10** |
-| exe 大小 | 1,674,752 bytes |
+| HEAD | `7c92299` |
+| 最新发布 | **v11** |
+| exe 大小 | 1,163,776 bytes |
 | CI | Typo Check / Build Project / Build & Release 全绿 |
 | 全树 typos | exit 0 |
 
