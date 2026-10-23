@@ -12,6 +12,10 @@ extend-exclude = [
   "**/include/**",
   "**/classes/**",
   "**/x64/**",
+  # Audit/check reports quote the misspellings they document ("Writting" ->
+  # "Writing"). Flagging them there is noise, not a defect.
+  "AUDIT-*.md",
+  "CHECK-*.md",
 ]
 
 [default]
