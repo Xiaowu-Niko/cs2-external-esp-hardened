@@ -9,6 +9,22 @@ bool Overlays::Init() {
     return GetInstance().InitImpl();
 }
 
+// sample_rate * sample_length comes from config.json with no range validation,
+// and the result is used as a modulus in RenderSpeedChart. A 0 there is
+// STATUS_INTEGER_DIVIDE_BY_ZERO, so clamp to a usable minimum (2 points, which
+// is also the smallest size that gives a non-degenerate line).
+size_t Overlays::SafeVelBufferSize(int rate, float length) {
+    if (rate < 1) rate = 1;
+    const double requested = static_cast<double>(rate) * static_cast<double>(length);
+    if (!(requested >= 2.0)) // also catches NaN
+        return 2;
+    // Guard against a pathological config asking for gigabytes.
+    constexpr double kMax = 1 << 20;
+    if (requested > kMax)
+        return static_cast<size_t>(kMax);
+    return static_cast<size_t>(requested);
+}
+
 void Overlays::Render() {
     return GetInstance().RenderImpl();
 }
@@ -31,7 +47,8 @@ bool Overlays::InitImpl() {
 	io.Fonts->AddFontFromMemoryTTF(weapon_icon_font, weapon_icon_font_len, 12.f, &merge_icon_cfg, icon_ranges);
 
     // Pre allocate buffer
-    this->vel_buffer.resize(static_cast<size_t>(cfg::world::velocity::sample_rate * cfg::world::velocity::sample_length));
+    this->vel_buffer.resize(SafeVelBufferSize(cfg::world::velocity::sample_rate,
+                                              cfg::world::velocity::sample_length));
 
     return true;
 }
@@ -291,6 +308,11 @@ void Overlays::RenderSpeedChart() {
     int rate = cfg::world::velocity::sample_rate;
     float length = cfg::world::velocity::sample_length;
 
+    // rate is also the divisor for sample_interval below; a 0 from config.json
+    // would make it infinite and the sampler would never record a point.
+    if (rate < 1)
+        rate = 1;
+
     static int prev_rate = rate;
     static float prev_length = length;
 
@@ -325,7 +347,7 @@ void Overlays::RenderSpeedChart() {
         prev_rate = rate;
         prev_length = length;
 
-        vel_buffer.resize(static_cast<size_t>(rate * length));
+        vel_buffer.resize(SafeVelBufferSize(rate, length));
     }
 
     Vec2_t speed_2d(local.vel.x, local.vel.y);
@@ -333,6 +355,14 @@ void Overlays::RenderSpeedChart() {
 
     vel_accumulator += io.DeltaTime;
     size_t buff_size = vel_buffer.size();
+
+    // buff_size is used as a modulus below. It is derived from sample_rate *
+    // sample_length, both of which come straight out of config.json and are not
+    // range-checked on load, so a 0 there made `vel_index % 0` raise
+    // STATUS_INTEGER_DIVIDE_BY_ZERO and killed the process. Guard rather than
+    // trust the config.
+    if (buff_size < 2)
+        return;
 
     std::vector<ImVec2> points;
     points.reserve(buff_size);
@@ -458,6 +488,12 @@ void Overlays::RenderRadar() {
     auto& pos = cfg::world::radar::pos;
     auto& size = cfg::world::radar::size;
     float range = cfg::world::radar::range;
+
+    // Used as a divisor below. The menu slider clamps to 100..8000, but
+    // config.json is user-editable and not validated on load; a 0 would make
+    // every blip 0/0 = NaN and draw at garbage coordinates.
+    if (!(range > 0.f))
+        range = 2000.f;
 
     if (is_menu_open) {
         ImGui::SetNextWindowBgAlpha(0.0f);

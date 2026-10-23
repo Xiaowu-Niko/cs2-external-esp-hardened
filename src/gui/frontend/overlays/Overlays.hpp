@@ -13,6 +13,10 @@ public:
     static bool Init();
     static void Render();
 
+    // Clamps sample_rate * sample_length to something RenderSpeedChart can use
+    // as a modulus. Values come from config.json unchecked.
+    static size_t SafeVelBufferSize(int rate, float length);
+
 private:
     ImFont* font;
     ImFont* font_alt;
