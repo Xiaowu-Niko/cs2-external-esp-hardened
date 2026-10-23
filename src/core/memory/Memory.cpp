@@ -163,21 +163,27 @@ LPVOID pProcess::Allocate(size_t size_in_bytes)
 
 uintptr_t pProcess::FindSignature(std::vector<uint8_t> signature)
 {
-	std::unique_ptr<uint8_t[]> data;
-	data = std::make_unique<uint8_t[]>(this->base_client_.size);
+	if (signature.empty() || !this->base_client_.size)
+		return 0x0;
 
-	if (!ReadProcessMemory(this->handle_, (void*)(this->base_client_.base), data.get(), this->base_client_.size, NULL)) {
+	const size_t module_size = this->base_client_.size;
+	std::unique_ptr<uint8_t[]> data = std::make_unique<uint8_t[]>(module_size);
+
+	if (!ReadProcessMemory(this->handle_, (void*)(this->base_client_.base), data.get(), module_size, NULL)) {
 		return 0x0;
 	}
 
-	for (uintptr_t i = 0; i < this->base_client_.size; i++)
+	// Bound the start index so that i + j always stays inside the buffer.
+	// The original looped i < size and indexed data[i + j] unguarded, so a
+	// signature that partially matched at the end read past the allocation.
+	for (size_t i = 0; i + signature.size() <= module_size; i++)
 	{
-		for (uintptr_t j = 0; j < signature.size(); j++)
+		for (size_t j = 0; j < signature.size(); j++)
 		{
 			if (signature.at(j) == 0x00)
 				continue;
 
-			if (*reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(&data[i + j])) == signature.at(j))
+			if (data[i + j] == signature.at(j))
 			{
 				if (j == signature.size() - 1)
 					return this->base_client_.base + i;
@@ -191,24 +197,31 @@ uintptr_t pProcess::FindSignature(std::vector<uint8_t> signature)
 
 uintptr_t pProcess::FindSignature(ProcessModule target_module, std::vector<uint8_t> signature)
 {
-	std::unique_ptr<uint8_t[]> data;
-	data = std::make_unique<uint8_t[]>(0xFFFFFFF);
+	if (signature.empty() || !target_module.size)
+		return 0x0;
 
-	if (!ReadProcessMemory(this->handle_, (void*)(target_module.base), data.get(), 0xFFFFFFF, NULL)) {
-		return NULL;
+	// Was: a fixed 0xFFFFFFF (256 MB) allocation, unconditionally read from the
+	// module base. Modules are far smaller, so that read almost always failed
+	// and the 256 MB was wasted; when it did succeed the scan indexed past the
+	// buffer. Read exactly the module, and bound the scan.
+	const size_t scan_size = target_module.size;
+	std::unique_ptr<uint8_t[]> data = std::make_unique<uint8_t[]>(scan_size);
+
+	if (!ReadProcessMemory(this->handle_, (void*)(target_module.base), data.get(), scan_size, NULL)) {
+		return 0x0;
 	}
 
-	for (uintptr_t i = 0; i < 0xFFFFFFF; i++)
+	for (size_t i = 0; i + signature.size() <= scan_size; i++)
 	{
-		for (uintptr_t j = 0; j < signature.size(); j++)
+		for (size_t j = 0; j < signature.size(); j++)
 		{
 			if (signature.at(j) == 0x00)
 				continue;
 
-			if (*reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(&data[i + j])) == signature.at(j))
+			if (data[i + j] == signature.at(j))
 			{
 				if (j == signature.size() - 1)
-					return this->base_client_.base + i;
+					return target_module.base + i; // was base_client_.base — wrong module
 				continue;
 			}
 			break;

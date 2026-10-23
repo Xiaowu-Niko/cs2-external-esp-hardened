@@ -1,4 +1,4 @@
-﻿#include "Config.hpp"
+#include "Config.hpp"
 
 bool Config::Read() {
 	return GetInstance().ReadImpl();
@@ -218,8 +218,11 @@ bool Config::WriteImpl() {
 	// flag colors
 	auto& fcol = col["flags"];
 
-	ColorToJson(fcol, "blinded_team", cfg::esp::colors::flags::flashed_team);
-	ColorToJson(fcol, "blinded_enemy", cfg::esp::colors::flags::flashed_enemy);
+	// Keys must match ReadImpl, which looks for "flashed_team"/"flashed_enemy".
+	// The original wrote "blinded_*", so flashed-flag colours were saved under a
+	// name nothing ever read back — they silently reset on every restart.
+	ColorToJson(fcol, "flashed_team", cfg::esp::colors::flags::flashed_team);
+	ColorToJson(fcol, "flashed_enemy", cfg::esp::colors::flags::flashed_enemy);
 
 	ColorToJson(fcol, "reloading_team", cfg::esp::colors::flags::reloading_team);
 	ColorToJson(fcol, "reloading_enemy", cfg::esp::colors::flags::reloading_enemy);

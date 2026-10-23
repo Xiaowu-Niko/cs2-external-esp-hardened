@@ -18,7 +18,10 @@ public:
 		return x == o.x && y == o.y;
 	}
 	bool operator==(const float o) const {
-		return x == y && y == o;
+		// Was: `x == y && y == o` — that compares the two components to each
+		// other, so (3,0) == 3.f was false. Only `is_zero()` relied on this and
+		// happened to get the right answer, so the bug never surfaced.
+		return x == o && y == o;
 	}
 	bool operator!=(const Vec2_t& o) const {
 		return !(*this == o);

@@ -46,7 +46,11 @@ bool Player::GetPawn() {
 	auto p = Engine::GetProcess();
 	auto client = Engine::GetClient();
 
-	auto entity_pawn_address = p->read<uintptr_t>(controller + offsets::controller::m_hPawn);
+	// m_hPawn is a CHandle (32-bit index), not a pointer — reading it as
+	// uintptr_t pulled 8 bytes and then narrowed into the int member. Only the
+	// low 15 bits are ever used (see the two masks below), so reading the
+	// documented 4 bytes gives identical results without the over-read.
+	auto entity_pawn_address = p->read<int32_t>(controller + offsets::controller::m_hPawn);
 
 	if (!entity_pawn_address)
 		return false;
@@ -72,6 +76,11 @@ bool Player::UpdateController() {
 	// expensive
 	if (!p->read_raw(controller + offsets::controller::m_iszPlayerName, this->name, sizeof(this->name)))
 		return false;
+
+	// The game field is char[128] and is not guaranteed to be NUL-terminated
+	// within the bytes we read. Force it, or the %s / std::format call sites
+	// walk off the end of the array.
+	this->name[sizeof(this->name) - 1] = '\0';
 
 	this->localplayer = p->read<bool>(controller + offsets::controller::m_bIsLocalPlayerController);
 	this->ping = p->read<int>(controller + offsets::controller::m_iPing);

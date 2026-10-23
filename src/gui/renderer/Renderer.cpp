@@ -123,9 +123,12 @@ bool Renderer::HandleState() {
         Window::SetClickthrough(Window::hwnd, !this->isOpen);
         LOGF(VERBOSE, "Captured global VK_INSERT or VK_RSHIFT, toggling menu state to {}", this->isOpen);
 
-        // Not the best way, but wont bother the user
-        // As far as i know, no one has complained about the config saving system :D
-        std::thread(Config::Write).detach(); // Not needed, but just in case
+        // Save synchronously. The original detached a new thread on every
+        // toggle, so two quick presses ran two Config::Write calls against the
+        // same config.json at once — interleaved writes truncate or corrupt the
+        // file, and it is then rejected on next start. The file is a couple of
+        // KB, so writing inline costs well under a millisecond.
+        Config::Write();
     }
 
     if (pressed_end)

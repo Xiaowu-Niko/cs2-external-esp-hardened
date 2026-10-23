@@ -32,17 +32,24 @@ public:
     bool localplayer = false;
     bool has_c4 = false;
 
-    char name[32];
-    //std::string name;
+    // m_iszPlayerName is a char[128] in the game (see Offsets.hpp). The original
+    // read only 32 bytes into this buffer with no forced terminator, so any name
+    // of 32+ chars left the array without a NUL and the `%s` / std::format uses
+    // in Esp.cpp:240 and Overlays.cpp:245,268,415 read past the end.
+    char name[128]{};
     uint64_t steam_id{};
 
     Weapon weapon;
-    int32_t ammo;
-    bool is_reloading;
+    // Set only when UpdateWeapon() succeeds; without these initialisers a
+    // player whose weapon could not be read left them as garbage, which then
+    // reached Esp.cpp's ammo/reload flags.
+    int32_t ammo = -1;
+    bool is_reloading = false;
 
     std::vector<bone_pos> bone_list;
 
-    int pawn_controller_addr;
+    // A CHandle (32-bit index), not a pointer — see Player::GetPawn().
+    int pawn_controller_addr = 0;
     ObserverServices observer_services;
 private:
     uintptr_t list_entry;
