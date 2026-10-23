@@ -1,4 +1,4 @@
-﻿#include "Updater.hpp"
+#include "Updater.hpp"
 
 bool Updater::Init() {
 	return GetInstance().InitImpl();
@@ -8,11 +8,23 @@ bool Updater::Process() {
 	return GetInstance().ProcessImpl();
 }
 
+bool Updater::IsEnabled() {
+	return cfg::settings::check_updates;
+}
+
 Status Updater::GetStatus() {
 	return GetInstance().status;
 }
 
 bool Updater::InitImpl() {
+	// Opt-in. See the note on status_url in Updater.hpp for why the default
+	// changed from "always fetch" to "only when asked".
+	if (!cfg::settings::check_updates) {
+		LOGF(INFO, "Update check disabled (utils.check_updates = false)");
+		isSetup = false;
+		return false;
+	}
+
 	json response;
 	auto http_status = HttpHelper::Get(this->status_url, response);
 
@@ -58,6 +70,11 @@ bool Updater::InitImpl() {
 }
 
 bool Updater::ProcessImpl() {
+	// Disabled: report success so main.cpp does not stop and prompt. Nothing
+	// downstream requires the status to have been fetched.
+	if (!cfg::settings::check_updates)
+		return true;
+
 	if (!isSetup) {
 		LOGF(FATAL, "Please, call Init() function before calling Process() and make sure it returns ok");
 		return false;

@@ -46,10 +46,15 @@ int main()
     if (!SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS))
         LOGF(WARNING, "Could not set application process priority to HIGH");
 
-    if (!Updater::Init() || !Updater::Process()) {
-        LOGF(FATAL, "Updater failed to run, the application has not verified its status, execution its not recommended");
-        LOGF(INFO, "Press any key to ignore and continue execution...");
-        std::cin.get();
+    // Opt-in network check (cfg::settings::check_updates, default false).
+    // When disabled, Updater::Init() returns false and Process() returns true,
+    // so this block is skipped entirely — no outbound request, no prompt.
+    if (Updater::IsEnabled()) {
+        if (!Updater::Init() || !Updater::Process()) {
+            LOGF(FATAL, "Updater failed to run, the application has not verified its status, execution its not recommended");
+            LOGF(INFO, "Press any key to ignore and continue execution...");
+            std::cin.get();
+        }
     }
 
     if (!Engine::Init()) {

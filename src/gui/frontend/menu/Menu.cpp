@@ -1,4 +1,4 @@
-﻿#include "Menu.hpp"
+#include "Menu.hpp"
 
 #include "core/engine/cache/Cache.hpp"
 #include "gui/renderer/Renderer.hpp" // Circular dependency
@@ -309,6 +309,16 @@ void Menu::RenderImpl() {
 
 					ImGui::Checkbox("Free CPU", &cfg::settings::free_cpu);
 					ImGui::SetItemTooltip("Let the CPU sleep to Free Resources\nNOTE: might cause performance issues in lower end computers!");
+
+					ImGui::Checkbox("Check Updates", &cfg::settings::check_updates);
+					ImGui::SetItemTooltip(
+						"Sends a request to the upstream repository on startup.\n"
+						"Off by default: the request goes to a repo this fork does not\n"
+						"control, and it compares against upstream's version numbers."
+					);
+					ImGui::BeginDisabled(!cfg::settings::check_updates);
+					ImGui::TextDisabled("Takes effect on next launch");
+					ImGui::EndDisabled();
 
 					ImGui::Text("Notes");
 					ImGui::Separator();

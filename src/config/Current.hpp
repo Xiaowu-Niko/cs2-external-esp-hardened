@@ -111,6 +111,12 @@ namespace cfg {
 		inline bool streamproof = false;
 		inline bool vsync = false;
 		inline bool free_cpu = true;
+
+		// Opt-in network check against the upstream repository. Off by default:
+		// it contacted IMXNOOBX's repo on every launch and compared against
+		// upstream's version numbers, so a fork build was always "out of date".
+		// See Updater.hpp for the full reasoning.
+		inline bool check_updates = false;
 	}
 
 	// Not stored, just for testing
