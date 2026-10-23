@@ -127,6 +127,7 @@ bool Config::ReadImpl() {
 		cfg::settings::streamproof = data["utils"].value("streamproof", false);
 		cfg::settings::vsync = data["utils"].value("vsync", true);
 		cfg::settings::free_cpu = data["utils"].value("free_cpu", true);
+		cfg::settings::refresh_ms = data["utils"].value("refresh_ms", 16);
 		cfg::settings::check_updates = data["utils"].value("check_updates", false);
 		//cfg::settings::open_menu_key = data["utils"].value("open_menu_key", 0);
 	}
@@ -243,6 +244,7 @@ bool Config::WriteImpl() {
 	data["utils"]["streamproof"] = cfg::settings::streamproof;
 	data["utils"]["vsync"] = cfg::settings::vsync;
 	data["utils"]["free_cpu"] = cfg::settings::free_cpu;
+	data["utils"]["refresh_ms"] = cfg::settings::refresh_ms;
 	data["utils"]["check_updates"] = cfg::settings::check_updates;
 	//data["utils"]["open_menu_key"] = cfg::settings::open_menu_key;
 

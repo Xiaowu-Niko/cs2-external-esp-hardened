@@ -1,4 +1,4 @@
-﻿#include "Cache.hpp"
+#include "Cache.hpp"
 
 #include "core/engine/Engine.hpp" // Circular dep
 #include "core/offsets/Dumper.hpp"
@@ -27,18 +27,27 @@ bool Cache::RefreshImpl() {
 
     auto now = steady_clock::now();
 
-    // Without this, we are pointless :c
-    // Its just calling game.UpdateMatrix() which has to bee updated as fast as possible
+    // The view matrix has to track as fast as possible or the overlay lags the
+    // camera, so this one read stays outside the throttle.
     if (!game.Update())
         return false;
 
+    // Everything else is throttled to cfg::settings::refresh_ms.
+    //
+    // Was a fixed 5 ms, which at 64 players (Player::Update + Weapon::Update
+    // are ~15 reads each) is roughly 190,000 NtReadVirtualMemory calls per
+    // second. Nothing on screen needs that: 16 ms matches a 60 Hz display and
+    // is indistinguishable in use, while cutting the call volume by ~3x.
+    // Fewer calls means fewer samples for anything observing the syscall.
+    const auto interval = std::chrono::milliseconds(
+        cfg::settings::refresh_ms > 0 ? cfg::settings::refresh_ms : 16);
+
 #ifdef _DEBUG
-    // Testing performance
-    if (now - last < (cfg::dev::cache_refresh_rate * 1ms)) 
+    // Testing performance: let the dev slider win.
+    if (now - last < (cfg::dev::cache_refresh_rate * 1ms))
         return true;
 #else
-    // Just refresh every 5ms good for most people
-    if (now - last < 5ms) 
+    if (now - last < interval)
         return true; // All good
 #endif
 

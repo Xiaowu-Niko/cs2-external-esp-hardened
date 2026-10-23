@@ -4,10 +4,13 @@
 #include <vector>
 #include <math.h>
 #include <Windows.h>
-#include <TlHelp32.h>
 #include <string>
 #include <iostream>
 #include <Psapi.h>
+
+// TlHelp32.h intentionally not included: process and module discovery no longer
+// go through CreateToolhelp32Snapshot / Process32Next / Module32Next, so the
+// import table no longer carries those exports. See Memory.cpp.
 
 // EnumProcessModulesEx / GetModuleInformation / GetModuleBaseNameW live in
 // psapi.lib. MSVC's default library set does not include it, so link it here
@@ -58,11 +61,27 @@ public:
 	HWND		  hwnd_; // window handle
 	ProcessModule base_client_;
 
+	// Handle lifetime.
+	//
+	// The original opened one handle at attach and held it until the process
+	// exited, so a handle to cs2.exe with PROCESS_VM_READ was permanently
+	// visible in every handle enumeration for the whole session. A handle that
+	// appears, is used, and closes again is far less interesting than one that
+	// is always there.
+	//
+	// handle_ is kept as the member name so existing call sites compile, but it
+	// is now re-created on a coarse TTL. refresh_handle() is called from the
+	// read path; if the handle has expired it is closed and reopened.
+	DWORD         handle_opened_at_ = 0;
+	static constexpr DWORD kHandleTtlMs = 30000;
+
 public:
 	bool AttachProcess(const char* process_name);
 	bool AttachWindow(const char* window_name);
 	bool UpdateHWND();
 	void Close();
+
+	bool refresh_handle();
 
 public:
 	ProcessModule GetModule(const char* module_name);
@@ -87,6 +106,9 @@ public:
 	// ntdll export unconditionally.
 	bool read_raw(uintptr_t address, void* buffer, size_t size)
 	{
+		if (!this->refresh_handle())
+			return false;
+
 		SIZE_T bytesRead = 0;
 
 		if (auto& r = sc::nt_read(); r.ok)
@@ -124,6 +146,9 @@ public:
 	T read(uintptr_t address)
 	{
 		T buffer{};
+
+		if (!this->refresh_handle())
+			return buffer;
 
 		if (auto& r = sc::nt_read(); r.ok)
 		{

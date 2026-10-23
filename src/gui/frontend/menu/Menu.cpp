@@ -310,6 +310,13 @@ void Menu::RenderImpl() {
 					ImGui::Checkbox("Free CPU", &cfg::settings::free_cpu);
 					ImGui::SetItemTooltip("Let the CPU sleep to Free Resources\nNOTE: might cause performance issues in lower end computers!");
 
+					ImGui::SliderInt("Refresh rate", &cfg::settings::refresh_ms, 4, 50, "%d ms");
+					ImGui::SetItemTooltip(
+						"How often entity data is re-read from the game.\n"
+						"16 ms matches a 60 Hz display; lower values read more\n"
+						"often for no visible gain."
+					);
+
 					ImGui::Checkbox("Check Updates", &cfg::settings::check_updates);
 					ImGui::SetItemTooltip(
 						"Sends a request to the upstream repository on startup.\n"

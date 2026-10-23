@@ -1,34 +1,92 @@
 #include "Memory.hpp"
-#include <tlhelp32.h>
+
+// ---------------------------------------------------------------------------
+// Process discovery
+//
+// The original found cs2.exe by walking CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)
+// and comparing every entry's szExeFile. Together with the module lookup
+// (CreateToolhelp32Snapshot(TH32CS_SNAPMODULE) + Module32NextW) that is *the*
+// textbook external-cheat fingerprint: no legitimate overlay enumerates every
+// process on the box looking for a game by name.
+//
+// Both are gone now, and tlhelp32.h is no longer included:
+//   pid     — EnumWindows + QueryFullProcessImageNameW on visible top-level
+//             windows only, which is ordinary desktop-app behaviour
+//   modules — EnumProcessModulesEx on the handle already held
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Compare a wide basename against a narrow ASCII name, case-insensitively.
+bool basename_equals(const wchar_t* wide_path, const char* narrow_name) {
+    if (!wide_path || !narrow_name) return false;
+
+    const wchar_t* base = wcsrchr(wide_path, L'\\');
+    base = base ? base + 1 : wide_path;
+
+    size_t i = 0;
+    for (; narrow_name[i]; ++i) {
+        wchar_t w = base[i];
+        if (!w) return false;
+        if (w >= L'A' && w <= L'Z') w = static_cast<wchar_t>(w + 32);
+        char n = narrow_name[i];
+        if (n >= 'A' && n <= 'Z') n = static_cast<char>(n + 32);
+        if (w != static_cast<wchar_t>(n)) return false;
+    }
+    return base[i] == L'\0';
+}
+
+struct FindCtx {
+    const char* exe_name;
+    DWORD pid;
+};
+
+// Enumerate top-level windows and resolve each to its process image name.
+//
+// This replaces CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS) + Process32First/
+// Next, which is the canonical "external cheat looking for the game" pattern:
+// it snapshots every process on the box and compares szExeFile. Here we only
+// touch processes that own a visible top-level window, which is what a normal
+// desktop application does anyway.
+BOOL CALLBACK find_by_exe_cb(HWND hwnd, LPARAM lparam) {
+    auto* ctx = reinterpret_cast<FindCtx*>(lparam);
+
+    if (!IsWindowVisible(hwnd))
+        return TRUE;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (!pid || pid == GetCurrentProcessId())
+        return TRUE;
+
+    // QUERY_LIMITED is enough to read the image path; no SeDebugPrivilege.
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h)
+        return TRUE;
+
+    wchar_t path[MAX_PATH] = {};
+    DWORD size = MAX_PATH;
+    bool match = false;
+
+    if (QueryFullProcessImageNameW(h, 0, path, &size))
+        match = basename_equals(path, ctx->exe_name);
+
+    CloseHandle(h);
+
+    if (match) {
+        ctx->pid = pid;
+        return FALSE; // stop enumerating
+    }
+    return TRUE;
+}
+
+} // namespace
 
 uint32_t pProcess::FindProcessIdByProcessName(const char* ProcessName)
 {
-	std::wstring wideProcessName;
-	int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, ProcessName, -1, nullptr, 0);
-	if (wideCharLength > 0)
-	{
-		wideProcessName.resize(wideCharLength);
-		MultiByteToWideChar(CP_UTF8, 0, ProcessName, -1, &wideProcessName[0], wideCharLength);
-	}
-
-	HANDLE hPID = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
-	PROCESSENTRY32W process_entry_{ };
-	process_entry_.dwSize = sizeof(PROCESSENTRY32W);
-
-	DWORD pid = 0;
-	if (Process32FirstW(hPID, &process_entry_))
-	{
-		do
-		{
-			if (!wcscmp(process_entry_.szExeFile, wideProcessName.c_str()))
-			{
-				pid = process_entry_.th32ProcessID;
-				break;
-			}
-		} while (Process32NextW(hPID, &process_entry_));
-	}
-	CloseHandle(hPID);
-	return pid;
+    FindCtx ctx{ ProcessName, 0 };
+    EnumWindows(find_by_exe_cb, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.pid;
 }
 
 uint32_t pProcess::FindProcessIdByWindowName(const char* WindowName)
@@ -57,7 +115,42 @@ HWND pProcess::GetWindowHandleFromProcessId(DWORD ProcessId) {
 	return NULL; // No main window found for the given process ID
 }
 
-  bool pProcess::AttachProcess(const char* ProcessName)
+bool pProcess::refresh_handle()
+{
+    if (!this->pid_)
+        return false;
+
+    // Fast path: still inside the TTL.
+    if (this->handle_ && (GetTickCount() - this->handle_opened_at_) < kHandleTtlMs)
+        return true;
+
+    // Expired: drop it and open a fresh one. Closing through NtClose rather
+    // than CloseHandle keeps the call off the kernel32 export that hooking
+    // frameworks like to intercept.
+    if (this->handle_)
+    {
+        if (sc::nt_close().ok) sc::nt_close().fn(this->handle_);
+        else                   CloseHandle(this->handle_);
+        this->handle_ = nullptr;
+    }
+
+    this->handle_ = OpenProcess(secret::kReadRights, FALSE, this->pid_);
+    if (!this->handle_)
+    {
+        // The game may have restarted under a new pid; try to re-resolve once.
+        this->pid_ = this->FindProcessIdByProcessName("cs2.exe");
+        if (!this->pid_)
+            return false;
+        this->handle_ = OpenProcess(secret::kReadRights, FALSE, this->pid_);
+        if (!this->handle_)
+            return false;
+    }
+
+    this->handle_opened_at_ = GetTickCount();
+    return true;
+}
+
+bool pProcess::AttachProcess(const char* ProcessName)
 {
 	this->pid_ = this->FindProcessIdByProcessName(ProcessName);
 
@@ -79,6 +172,8 @@ HWND pProcess::GetWindowHandleFromProcessId(DWORD ProcessId) {
 
 		if (!handle_)
 			return false;
+
+		handle_opened_at_ = GetTickCount();
 
 		EnumProcessModulesEx(this->handle_, modules, sizeof(modules), &_, LIST_MODULES_64BIT);
 		base_client_.base = (uintptr_t)modules[0];
@@ -109,6 +204,7 @@ bool pProcess::AttachWindow(const char* WindowName)
 		// (Engine.cpp uses AttachProcess), but it still compiled in, so it is a
 		// free signpost for anyone reading the binary.
 		handle_ = OpenProcess(secret::kReadRights, FALSE, pid_);
+		handle_opened_at_ = GetTickCount();
 
 		EnumProcessModulesEx(this->handle_, modules, sizeof(modules), &_, LIST_MODULES_64BIT);
 		base_client_.base = (uintptr_t)modules[0];
@@ -131,28 +227,37 @@ bool pProcess::UpdateHWND()
 
 ProcessModule pProcess::GetModule(const char* lModule)
 {
-	std::wstring wideModule;
-	int wideCharLength = MultiByteToWideChar(CP_UTF8, 0, lModule, -1, nullptr, 0);
-	if (wideCharLength > 0)
+	// Was: CreateToolhelp32Snapshot(TH32CS_SNAPMODULE) + Module32NextW, i.e. a
+	// module snapshot of the target taken purely to look up a base address.
+	// EnumProcessModulesEx on the handle we already hold gives the same answer
+	// without a second snapshot handle, and it is the same call the module
+	// resolver in hardened/secret.hpp uses.
+	if (!this->handle_)
+		return { 0, 0 };
+
+	HMODULE mods[0x200] = {};
+	DWORD needed = 0;
+
+	if (!EnumProcessModulesEx(this->handle_, mods, sizeof(mods), &needed, LIST_MODULES_64BIT))
+		return { 0, 0 };
+
+	const DWORD count = needed / sizeof(HMODULE);
+	for (DWORD i = 0; i < count; ++i)
 	{
-		wideModule.resize(wideCharLength);
-		MultiByteToWideChar(CP_UTF8, 0, lModule, -1, &wideModule[0], wideCharLength);
+		wchar_t name[MAX_PATH] = {};
+		if (!GetModuleBaseNameW(this->handle_, mods[i], name, MAX_PATH))
+			continue;
+
+		if (!basename_equals(name, lModule))
+			continue;
+
+		MODULEINFO info{};
+		if (!GetModuleInformation(this->handle_, mods[i], &info, sizeof(info)))
+			continue;
+
+		return { (DWORD_PTR)info.lpBaseOfDll, info.SizeOfImage };
 	}
 
-	HANDLE handle_module = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid_);
-	MODULEENTRY32W module_entry_{};
-	module_entry_.dwSize = sizeof(MODULEENTRY32W);
-
-	do
-	{
-		if (!wcscmp(module_entry_.szModule, wideModule.c_str()))
-		{
-			CloseHandle(handle_module);
-			return { (DWORD_PTR)module_entry_.modBaseAddr, module_entry_.dwSize };
-		}
-	} while (Module32NextW(handle_module, &module_entry_));
-
-	CloseHandle(handle_module);
 	return { 0, 0 };
 }
 
@@ -243,5 +348,12 @@ uintptr_t pProcess::FindCodeCave(uint32_t length_in_bytes)
 
 void pProcess::Close()
 {
-	CloseHandle(handle_);
+	// Same reasoning as refresh_handle(): NtClose keeps the call off the
+	// kernel32 export that user-mode hooks tend to intercept.
+	if (!handle_)
+		return;
+	if (sc::nt_close().ok) sc::nt_close().fn(handle_);
+	else                   CloseHandle(handle_);
+	handle_ = nullptr;
+	handle_opened_at_ = 0;
 }

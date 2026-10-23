@@ -112,6 +112,11 @@ namespace cfg {
 		inline bool vsync = false;
 		inline bool free_cpu = true;
 
+		// How often the entity cache re-reads game memory, in milliseconds.
+		// 16 ms ~ 60 Hz, which matches a typical display. Lower values read
+		// more often for no visible gain; see the note in Cache.cpp.
+		inline int refresh_ms = 16;
+
 		// Opt-in network check against the upstream repository. Off by default:
 		// it contacted IMXNOOBX's repo on every launch and compared against
 		// upstream's version numbers, so a fork build was always "out of date".

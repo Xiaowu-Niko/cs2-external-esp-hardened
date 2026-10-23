@@ -1,4 +1,6 @@
-﻿#include "HttpHelper.hpp"
+#include "HttpHelper.hpp"
+
+#ifdef ENABLE_HTTP_UPDATER
 
 int HttpHelper::Get(std::string url, json& response) {
 	return GetInstance().GetImpl(url, response);
@@ -88,3 +90,5 @@ size_t HttpHelper::WriteCallback(void* contents, size_t size, size_t nmemb, void
 	str->append(static_cast<char*>(contents), total_size);
 	return total_size;
 }
+
+#endif // ENABLE_HTTP_UPDATER
