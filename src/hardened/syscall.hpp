@@ -240,24 +240,30 @@ struct Api {
     bool ok = false;
 };
 
+// The export name never reaches .rdata: fnv1a is constexpr and the result is
+// folded into the SSN lookup, so only a 32-bit hash is emitted.
+//
+// IMPORTANT: pass the hash, never the string, into make_stub_hashed. An earlier
+// revision computed `constexpr uint32_t kHash = fnv1a("...")` but then still
+// called make_stub_hashed(fnv1a("...")) inside the lambda, so MSVC kept the
+// literal alive in .rdata. A constexpr integral used by value needs no capture.
+
 inline Api<NtReadVirtualMemory_t>& nt_read() {
-    // Hash folded at compile time — no literal emitted. Declared constexpr so
-    // MSVC does not keep the argument string alive in .rdata.
     constexpr uint32_t kHash = fnv1a("NtReadVirtualMemory");
     static Api<NtReadVirtualMemory_t> a = [] {
         Api<NtReadVirtualMemory_t> r{};
-        auto s = make_stub_hashed(fnv1a("NtReadVirtualMemory"));
+        auto s = make_stub_hashed(kHash);
         if (s.ok) { r.fn = reinterpret_cast<NtReadVirtualMemory_t>(s.code); r.ok = true; }
         return r;
     }();
-    (void)kHash;
     return a;
 }
 
 inline Api<NtWriteVirtualMemory_t>& nt_write() {
+    constexpr uint32_t kHash = fnv1a("NtWriteVirtualMemory");
     static Api<NtWriteVirtualMemory_t> a = [] {
         Api<NtWriteVirtualMemory_t> r{};
-        auto s = make_stub_hashed(fnv1a("NtWriteVirtualMemory"));
+        auto s = make_stub_hashed(kHash);
         if (s.ok) { r.fn = reinterpret_cast<NtWriteVirtualMemory_t>(s.code); r.ok = true; }
         return r;
     }();
@@ -265,9 +271,10 @@ inline Api<NtWriteVirtualMemory_t>& nt_write() {
 }
 
 inline Api<NtClose_t>& nt_close() {
+    constexpr uint32_t kHash = fnv1a("NtClose");
     static Api<NtClose_t> a = [] {
         Api<NtClose_t> r{};
-        auto s = make_stub_hashed(fnv1a("NtClose"));
+        auto s = make_stub_hashed(kHash);
         if (s.ok) { r.fn = reinterpret_cast<NtClose_t>(s.code); r.ok = true; }
         return r;
     }();
