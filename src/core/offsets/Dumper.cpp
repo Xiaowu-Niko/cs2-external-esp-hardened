@@ -1,5 +1,7 @@
 #include "Dumper.hpp"
 
+#include <memory> // std::unique_ptr / std::make_unique (also pulled in via common.hpp)
+
 #include "core/engine/Engine.hpp"
 
 bool Dumper::Init() {
@@ -136,9 +138,24 @@ std::vector<WORD> Dumper::StrSigToArray(const std::string& sig) {
 
     while (iss >> byte_str) {
         if (byte_str == "??" || byte_str == "?")
+        {
             bytes.push_back(256);
-        else
+            continue;
+        }
+
+        // std::stoul throws on a malformed token ("4G", "0x1FF" is fine but
+        // "XYZ" is not). The signatures are compile-time constants, so a typo
+        // in Offsets.hpp would otherwise abort the process with an unhandled
+        // exception instead of reporting which offset failed to resolve.
+        try
+        {
             bytes.push_back(static_cast<WORD>(std::stoul(byte_str, nullptr, 16)));
+        }
+        catch (const std::exception&)
+        {
+            LOGF(FATAL, "Malformed byte '{}' in signature: {}", byte_str, sig);
+            return {};
+        }
     }
     return bytes;
 }
@@ -189,41 +206,42 @@ std::vector<DWORD64> Dumper::ScanMemory(const std::string& sig, DWORD64 start, D
     if (!process)
         return result;
 
-    byte* buffer = new byte[MAX_BLOCK_SIZE];
-
     auto signature = StrSigToArray(sig);
-    if (!signature.size())
-        return result;
-
-    GetNextArray(next, signature);
-
-    MEMORY_BASIC_INFORMATION mbi;
-    while (VirtualQueryEx(process->handle_, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(mbi)) != 0)
+    if (!signature.empty()) // check before allocating; the original leaked the buffer here
     {
-        int searches = 0;
-        auto size = mbi.RegionSize;
+        GetNextArray(next, signature);
 
-        while (size >= MAX_BLOCK_SIZE)
+        // Owning pointer: the original used new[]/delete[] with an early return
+        // before the delete, so an empty signature leaked a 400 KB block on
+        // every call. A throw out of StrSigToArray (std::stoul on a malformed
+        // signature) leaked it too.
+        std::unique_ptr<byte[]> buffer = std::make_unique<byte[]>(MAX_BLOCK_SIZE);
+
+        MEMORY_BASIC_INFORMATION mbi;
+        while (VirtualQueryEx(process->handle_, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(mbi)) != 0)
         {
-            if (result.size() >= number) {
-                delete[] buffer;
-	            return result;
+            int searches = 0;
+            auto size = mbi.RegionSize;
+
+            while (size >= MAX_BLOCK_SIZE)
+            {
+                if (static_cast<int>(result.size()) >= number)
+                    return result;
+
+                ScanBlock(buffer.get(), next, signature, start + (MAX_BLOCK_SIZE * searches), MAX_BLOCK_SIZE, result);
+
+                size -= MAX_BLOCK_SIZE;
+                searches++;
             }
 
-            ScanBlock(buffer, next, signature, start + (MAX_BLOCK_SIZE * searches), MAX_BLOCK_SIZE, result);
+            ScanBlock(buffer.get(), next, signature, start + (MAX_BLOCK_SIZE * searches), size, result);
 
-            size -= MAX_BLOCK_SIZE;
-            searches++;
+            start += mbi.RegionSize;
+
+            if (static_cast<int>(result.size()) >= number || (end != 0 && start > end))
+                break;
         }
-
-        ScanBlock(buffer, next, signature, start + (MAX_BLOCK_SIZE * searches), size, result);
-
-        start += mbi.RegionSize;
-
-        if (result.size() >= number || end != 0 && start > end)
-            break;
     }
 
-	delete[] buffer;
-	return result;
+    return result;
 }
