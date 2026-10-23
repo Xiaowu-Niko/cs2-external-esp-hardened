@@ -1,4 +1,4 @@
-# 项目全面检查报告
+﻿# 项目全面检查报告
 
 日期：2026-10-23
 仓库：https://github.com/Xiaowu-Niko/cs2-external-esp-hardened
@@ -192,3 +192,112 @@ src/updater/http/HttpHelper.cpp   | 拼写
 提交：`05ddb9a 修复 Typo Check 与 Build Project 两个工作流的持续失败`
 
 本地与远端 HEAD 一致，工作区干净。
+
+---
+
+## 九、第二轮：深层正确性检查（拼写之外）
+
+第一轮只处理了拼写和工作流。第二轮逐个读完了剩余源文件，找到 **8 个真实缺陷**，全部已修并有验证。
+
+### 9.1 整数除零崩溃 ⭐ 最严重
+
+`Overlays.cpp` 的 `RenderSpeedChart` 用 `vel_buffer.size()` 作模数：
+
+```cpp
+vel_buffer.at(vel_index % buff_size)     // buff_size 为 0 时崩溃
+vel_index = (vel_index + 1) % buff_size
+```
+
+`buff_size` 来自 `sample_rate * sample_length`，两个值直接读 `config.json`，**加载时没有任何范围校验**（`Config.cpp:119-120`），菜单里的 Slider 只在 `_DEBUG` 下可见。
+
+所以一个手改过的 `config.json` 就能让程序启动即崩。实测：
+
+```
+buff_size = 0
+exit = -1073741676 (0xC0000094 = 整数除零)
+```
+
+同一段代码还有两处相关隐患：`float(buff_size - 1)` 在 `buff_size == 1` 时除零；`1.0f / rate` 在 `rate == 0` 时为 inf，采样循环永不执行。
+
+**修法**：新增 `Overlays::SafeVelBufferSize(rate, length)`，把结果夹到 `[2, 1<<20]`，同时挡住 `rate<1`、负值、NaN（NaN 比较恒假，用 `!(x >= 2.0)` 捕获）。`buff_size < 2` 时直接 return。radar 的 `range` 同样夹一次（它被用作除数）。
+
+8 组边界用例全部通过：正常值、全零、`rate=0`、`length=0`、极小、负 rate、NaN、超大请求。
+
+### 9.2 玩家名缓冲区越界读
+
+`m_iszPlayerName` 在游戏里是 `char[128]`（`Offsets.hpp:18`），原代码只读 32 字节进 `char[32]` **且不强制终止**。名字长度 ≥ 32 时数组里没有 NUL，而 `Esp.cpp:240` 用 `std::format("{}", player.name)`、`Overlays.cpp:245/268` 用 `"%s"` 输出，会一路读出缓冲区边界。
+
+**修法**：`char[128]` + 读取后强制 `name[127] = '\0'`。
+
+### 9.3 配置项写了但永远读不回来
+
+`ReadImpl` 读 `"flashed_team"/"flashed_enemy"`，`WriteImpl` 写的却是 `"blinded_team"/"blinded_enemy"`。**闪光标记的颜色每次重启都静默重置。** 统一为 `flashed_*`。
+
+### 9.4 并发写 config.json 导致损坏
+
+`Renderer.cpp:128` 每次切换菜单都 `std::thread(Config::Write).detach()`。快速连按会同时有多个线程写同一个文件，写入交错会截断 JSON，下次启动解析失败后被重置成默认配置。改为同步写（文件几 KB，耗时远小于 1ms）。
+
+### 9.5 Vec2 比较逻辑错误
+
+```cpp
+bool operator==(const float o) const { return x == y && y == o; }  // 拿两个分量互相比
+```
+
+`(3,0) == 3.f` 返回 `false`。只有 `is_zero()` 用它，而 `is_zero()` 恰好能得出正确答案，所以一直没暴露。改为 `x == o && y == o`，5 组用例验证。
+
+### 9.6 CHandle 按 8 字节读
+
+`m_hPawn` 是 CHandle（32 位索引），却用 `read<uintptr_t>` 读了 8 字节再窄化进 `int`。后续只用到低 15 位，行为等价，但属于跨字段过度读取。改为 `read<int32_t>`。
+
+### 9.7 死代码里的越界读与 256MB 分配
+
+`Memory.cpp` 的 `FindSignature` 两个重载都没有边界检查：`i < size` 却索引 `data[i + j]`。带模块参数的那个还固定分配 `0xFFFFFFF`（256MB）并从模块基址读同样长度——模块远小于此，读取几乎必然失败；成功时则越界。另外它返回 `base_client_.base + i` 而不是 `target_module.base + i`，**模块传错**。
+
+### 9.8 Dumper 内存泄漏与未捕获异常
+
+`ScanMemory` 用裸 `new[]/delete[]`，签名解析为空时直接 return，**每次调用漏 400KB**。`StrSigToArray` 里 `std::stoul` 遇到非法 token 抛异常无人捕获，进程直接 terminate——`Offsets.hpp` 写错一个字节就会以「未捕获异常」崩溃，而不是报出哪个偏移失败。
+
+改为 `unique_ptr` + `try/catch` + `LOGF(FATAL)`。
+
+### 9.9 更新检查改为可选（默认关闭）
+
+每次启动都会向 **IMXNOOBX 的仓库** 发 GET 请求（`Updater.hpp:41`，`main.cpp:49` 无条件调用）。三个问题：把所有用户 IP 和启动时间发给本项目不控制的仓库；比对的是上游版本号，fork 构建永远「out-of-date」每次启动弹框；启动初期一个与项目名绑定的外连是最容易被观测的指纹之一。
+
+改为 `cfg::settings::check_updates` 控制，默认 `false`，菜单里加了开关。
+
+关闭后除这条 GET 外，程序**没有任何其他网络调用**（已全树确认只有 `HttpHelper` 一条路径，且仅被 `Updater` 使用）。
+
+### 9.10 顺带补全未初始化成员
+
+`Weapon` 两个构造函数都没初始化 `ammo` / `is_reloading`；`Player::ammo` / `is_reloading` / `pawn_controller_addr` 也补上默认值。`ammo` 初始化为 `-1`，与 `Esp.cpp:253` 的 `!= -1` 判断一致。
+
+---
+
+## 十、最终状态
+
+| 项 | 值 |
+|---|---|
+| HEAD | `e4028bb` |
+| 最新发布 | **v10** |
+| exe 大小 | 1,674,752 bytes |
+| CI | Typo Check / Build Project / Build & Release 全绿 |
+| 全树 typos | exit 0 |
+
+### 发布的 exe 逐字节验证
+
+| 项 | 结果 |
+|---|---|
+| `D:\a\cs2...` 构建路径 | 干净 |
+| `Engine.cpp` / `bool __cdecl` | 干净 |
+| `pNtReadVirtualMemory` 类型名 | 干净 |
+| `cs2.exe` / `client.dll` / `engine2.dll` | 存在 |
+| `check_updates` 配置键 | 存在 |
+
+### 仍未解决
+
+1. **CFG 未启用** —— `src.vcxproj` 没开 `/guard:cf`，对「外部只读」威胁模型收益有限。
+2. **异常描述符类型名** —— `/EHsc` 的 `ThrowInfo` 含 `?AV<lambda_1>@...`、`std::filesystem_error` 等。关 RTTI 也去不掉，彻底消除需 `/EHs-c-`（禁 try/catch），风险过高。
+3. **未在真实 cs2.exe 上验证** —— 本机无游戏，只验证了 PE 合法性、加固项生效、功能字符串完整。
+4. **`Bomb.cpp:20` 的 `0x520 /* Magic Offset? */`** —— 上游注释自己都在怀疑，但没有可靠来源确认正确值，未改动。
+5. **`Engine.cpp:55` 的 build number 校验** —— 上游留的 TODO，未实现。
+
